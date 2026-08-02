@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pathfind — Google Interview Roadmap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="grid-fade"></div>
+  </div>
+
+  <header class="hero" id="top">
+    <nav class="nav">
+      <a class="brand" href="#top">
+        <span class="brand-mark" aria-hidden="true"></span>
+        Pathfind
+      </a>
+      <div class="nav-actions">
+        <button type="button" class="ghost-btn" id="reset-progress" title="Reset all progress">Reset</button>
+        <a class="ghost-btn" href="#roadmap">Roadmap</a>
+      </div>
+    </nav>
+
+    <div class="hero-stage">
+      <p class="brand-lockup">Pathfind</p>
+      <h1>Your Google interview path, tracked week by week.</h1>
+      <p class="hero-lede">
+        Built for Ananta’s Data Analyst / BI Engineer track — SQL intensity, product cases, resume metrics, and mocks.
+      </p>
+      <div class="hero-cta">
+        <a class="primary-btn" href="#roadmap" id="jump-current">Continue where you left off</a>
+        <p class="hero-meta" id="last-saved">Progress saves in this browser</p>
+      </div>
+
+      <div class="progress-plane" aria-label="Overall progress">
+        <svg class="ring" viewBox="0 0 120 120" role="img" aria-labelledby="progress-label">
+          <title id="progress-label">Overall completion</title>
+          <circle class="ring-track" cx="60" cy="60" r="52" />
+          <circle class="ring-value" cx="60" cy="60" r="52" id="progress-ring" />
+        </svg>
+        <div class="progress-copy">
+          <p class="progress-pct"><span id="progress-percent">0</span>%</p>
+          <p class="progress-sub"><span id="progress-done">0</span> of <span id="progress-total">0</span> milestones</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="target-strip" aria-label="Target role">
+      <p class="strip-label">Primary target</p>
+      <p class="strip-value">Google — Data Analyst / BI Engineer</p>
+      <p class="strip-note">Stretch: Analytics Engineer · Data Engineer</p>
+    </section>
+
+    <section class="controls" aria-label="Filters">
+      <div class="filter-row" role="tablist" aria-label="Roadmap filters">
+        <button type="button" class="filter is-active" data-filter="all" role="tab" aria-selected="true">All</button>
+        <button type="button" class="filter" data-filter="foundation" role="tab" aria-selected="false">Foundation</button>
+        <button type="button" class="filter" data-filter="weeks" role="tab" aria-selected="false">12 Weeks</button>
+        <button type="button" class="filter" data-filter="skills" role="tab" aria-selected="false">Skills</button>
+        <button type="button" class="filter" data-filter="checklist" role="tab" aria-selected="false">90-Day</button>
+      </div>
+    </section>
+
+    <section class="roadmap" id="roadmap" aria-label="Roadmap tracker">
+      <!-- Populated by app.js -->
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Pathfind · local progress only · export anytime</p>
+    <button type="button" class="ghost-btn" id="export-progress">Export JSON</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
