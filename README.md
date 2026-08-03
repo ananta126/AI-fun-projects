@@ -52,9 +52,9 @@ A proof of concept demonstrating that chat messages can be intelligently process
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1 — Architecture | ✅ Current | Folder structure, docs, no logic |
-| 2 — Authentication | ⏳ Pending approval | Login, register, JWT, logout |
-| 3 — One-to-One Chat | ⏳ Pending | Send, receive, store, read messages |
+| 1 — Architecture | ✅ Complete | Folder structure, docs, no logic |
+| 2 — Authentication | ✅ Complete | Login, register, JWT, logout |
+| 3 — One-to-One Chat | ⏳ Pending approval | Send, receive, store, read messages |
 | 4 — AI Features | ⏳ Pending | Summary, tasks, priority detection |
 
 ## Getting Started (Phase 2+)

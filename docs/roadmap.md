@@ -21,26 +21,19 @@ gantt
 
 ---
 
-## Phase 1 — Project Architecture ✅ (Current)
+## Phase 1 — Project Architecture ✅
 
 **Goal:** Establish folder structure, document architecture, define dependencies.
 
-**Deliverables:**
-- [x] Backend folder structure (`backend/app/`)
-- [x] Frontend folder structure (`frontend/lib/`)
-- [x] Architecture diagram (`docs/architecture.md`)
-- [x] Dependency explanation (`docs/dependencies.md`)
-- [x] Docker Compose for PostgreSQL
-- [x] `.env.example` with all config keys
-- [x] This roadmap
-
-**No application logic.** Awaiting your approval before Phase 2.
+**Status:** Complete.
 
 ---
 
-## Phase 2 — Authentication
+## Phase 2 — Authentication ✅ (Current)
 
 **Goal:** Users can register, login, and logout. JWT secures all API endpoints.
+
+**Status:** Complete — awaiting your review.
 
 ### Backend Tasks
 

@@ -1,9 +1,6 @@
 # pubspec.yaml
 # Purpose: Flutter dependency manifest (equivalent to Python's requirements.txt).
 # Run `flutter pub get` after editing this file.
-#
-# Phase 1: Dependencies are documented here but the Flutter project scaffold
-# will be created with `flutter create` in Phase 2.
 
 name: ai_comm_app
 description: AI-first communication POC — conversations become actionable.
@@ -17,27 +14,22 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # ── HTTP client (talks to FastAPI) ────────────────────────────────────────
-  # dio: ^5.7.0              # HTTP client with interceptors (auto-attach JWT)
+  # HTTP client — talks to FastAPI with JWT interceptor
+  dio: ^5.7.0
 
-  # ── State management ──────────────────────────────────────────────────────
-  # flutter_riverpod: ^2.6.1 # Reactive state; recommended for beginners
+  # State management — reactive UI updates when auth state changes
+  flutter_riverpod: ^2.6.1
 
-  # ── Secure storage (JWT tokens) ───────────────────────────────────────────
-  # flutter_secure_storage: ^9.2.2
+  # Encrypted storage for JWT tokens on device
+  flutter_secure_storage: ^9.2.2
 
-  # ── JSON serialization ────────────────────────────────────────────────────
-  # json_annotation: ^4.9.0
-
-  # ── Navigation ──────────────────────────────────────────────────────────
-  # go_router: ^14.6.2        # Declarative routing between screens
+  # Declarative routing between screens
+  go_router: ^14.6.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-  # build_runner: ^2.4.13
-  # json_serializable: ^6.8.0
 
 flutter:
   uses-material-design: true

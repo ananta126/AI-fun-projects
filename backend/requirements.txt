@@ -18,6 +18,7 @@ python-multipart>=0.0.12          # Required for form data (login forms)
 
 # ── Configuration ──────────────────────────────────────────────────────────
 pydantic-settings>=2.6.0  # Load settings from .env files
+pydantic[email]>=2.10.0   # EmailStr validation for auth schemas
 python-dotenv>=1.0.1      # Read .env files
 
 # ── HTTP client (for LLM APIs) ───────────────────────────────────────────────
