@@ -1,0 +1,21 @@
+# docker-compose.yml
+# Purpose: Local development database for the POC.
+# PostgreSQL runs in a container so you don't need to install it on your machine.
+# Usage (Phase 2+): docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-comm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ai_comm
+      POSTGRES_PASSWORD: ai_comm_dev
+      POSTGRES_DB: ai_comm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
