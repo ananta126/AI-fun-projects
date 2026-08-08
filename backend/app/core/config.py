@@ -24,6 +24,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Allow Phase 4 LLM vars in .env without failing startup
     )
 
     # Application
@@ -42,6 +43,11 @@ class Settings(BaseSettings):
 
     # CORS — Flutter app origins allowed to call this API
     cors_origins: list[str] = ["*"]
+
+    # AI / LLM (used in Phase 4; loaded now so .env stays valid)
+    llm_api_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str = ""
+    llm_model: str = "gpt-4o-mini"
 
 
 # Single shared instance — import this everywhere
