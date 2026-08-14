@@ -19,19 +19,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Bangers&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/styles.css" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230b1c1a'/><text x='32' y='42' text-anchor='middle' font-size='28' font-family='Georgia' fill='%23e8c07a'>A</text></svg>" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%23e23636'/><circle cx='32' cy='32' r='14' fill='%231b2a6b'/><path d='M32 18v28M18 32h28M22 22l20 20M42 22L22 42' stroke='%23fff' stroke-width='2'/></svg>"
+    />
   </head>
   <body>
+    <div class="web-bg" aria-hidden="true"></div>
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="site-header" id="top">
       <div class="header-inner">
         <a class="mark" href="#top" aria-label="Back to top">
-          <span class="mark-glyph">AM</span>
+          <span class="mark-glyph" aria-hidden="true">🕸</span>
           <span class="mark-text">Ananta Mohanta</span>
         </a>
         <nav class="nav" aria-label="Primary">
@@ -41,11 +45,11 @@
             <span></span>
           </button>
           <ul id="nav-list">
-            <li><a href="#about">About</a></li>
-            <li><a href="#work">Selected work</a></li>
-            <li><a href="#experience">Experience</a></li>
-            <li><a href="#skills">Skills</a></li>
-            <li><a href="#contact">Contact</a></li>
+            <li><a href="#about">Origin</a></li>
+            <li><a href="#work">Missions</a></li>
+            <li><a href="#experience">Timeline</a></li>
+            <li><a href="#skills">Powers</a></li>
+            <li><a href="#contact">Signal</a></li>
           </ul>
         </nav>
         <a class="btn btn-ghost header-cta" href="assets/Ananta_Mohanta_Resume.pdf" download>Resume</a>
@@ -54,26 +58,25 @@
 
     <main id="main">
       <section class="hero">
-        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="hero-web" aria-hidden="true"></div>
         <div class="hero-inner">
           <p class="eyebrow">
             <span class="pulse"></span>
-            Ghaziabad, India · Open to conversations
+            Ghaziabad, India · Spider-sense for bad data
           </p>
           <h1>
-            Data that survives
-            <em>migration</em>,
-            <span class="line">audit, and the trading day.</span>
+            With great data comes
+            <em>great responsibility.</em>
+            <span class="line">Migration. Audit. Reconcile.</span>
           </h1>
           <p class="lede">
-            I’m <strong>Ananta Kumar Mohanta</strong>, a senior data &amp; analytics professional
-            with nearly eight years in banking. I profile, map, reconcile, and automate the
-            pipelines that move regulated data from legacy systems into platforms the business
-            can trust.
+            I’m <strong>Ananta Kumar Mohanta</strong> — senior data &amp; analytics pro with nearly
+            eight years in banking. I weave the web of pipelines that move regulated data from
+            legacy systems into platforms the business can trust.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" href="#contact">Get in touch</a>
-            <a class="btn btn-secondary" href="#work">See selected work</a>
+            <a class="btn btn-primary" href="#contact">Send a signal</a>
+            <a class="btn btn-secondary" href="#work">View missions</a>
           </div>
           <dl class="hero-stats">
             <div>
@@ -94,14 +97,13 @@
 
       <section class="section about" id="about">
         <div class="section-head">
-          <p class="index">01</p>
-          <h2>Practice</h2>
+          <p class="index">Issue #01</p>
+          <h2>Origin Story</h2>
         </div>
         <div class="about-grid">
           <p class="about-lead">
-            I sit between business, risk, and engineering. My work is less about dashboards as
-            decoration and more about whether source and target actually agree — and whether
-            someone can prove it.
+            I sit between business, risk, and engineering — the analyst who shows up when source
+            and target don’t agree, and someone needs to prove it before the auditors do.
           </p>
           <div class="about-copy">
             <p>
@@ -126,12 +128,11 @@
 
       <section class="section work" id="work">
         <div class="section-head">
-          <p class="index">02</p>
-          <h2>Selected work</h2>
+          <p class="index">Issue #02</p>
+          <h2>Missions</h2>
         </div>
         <p class="section-intro">
-          Engagements drawn from client and employer work. Metrics stay qualitative where the
-          resume does not publish numbers.
+          Selected engagements from the field. No inflated numbers — just the work that shipped.
         </p>
         <div class="work-list">
           <article class="work-card">
@@ -224,8 +225,8 @@
 
       <section class="section experience" id="experience">
         <div class="section-head">
-          <p class="index">03</p>
-          <h2>Experience</h2>
+          <p class="index">Issue #03</p>
+          <h2>Timeline</h2>
         </div>
         <ol class="timeline">
           <li>
@@ -306,8 +307,8 @@
 
       <section class="section skills" id="skills">
         <div class="section-head">
-          <p class="index">04</p>
-          <h2>Skills</h2>
+          <p class="index">Issue #04</p>
+          <h2>Powers &amp; Tools</h2>
         </div>
         <div class="skill-groups">
           <div>
@@ -357,8 +358,8 @@
 
       <section class="section education" id="education">
         <div class="section-head">
-          <p class="index">05</p>
-          <h2>Education</h2>
+          <p class="index">Issue #05</p>
+          <h2>Training</h2>
         </div>
         <ul class="edu-list">
           <li>
@@ -374,12 +375,12 @@
 
       <section class="section contact" id="contact">
         <div class="section-head">
-          <p class="index">06</p>
-          <h2>Contact</h2>
+          <p class="index">Issue #06</p>
+          <h2>Send a Signal</h2>
         </div>
         <p class="contact-lead">
-          If you need someone who can map a hop, prove a reconcile, and still speak to risk and
-          operations — write.
+          Need someone who can map a hop, prove a reconcile, and still speak to risk and
+          operations? Swing into my inbox.
         </p>
         <ul class="contact-list">
           <li>
@@ -404,7 +405,7 @@
     </main>
 
     <footer class="site-footer">
-      <p>© <span id="year"></span> Ananta Kumar Mohanta. Built as a personal portfolio.</p>
+      <p>© <span id="year"></span> Ananta Kumar Mohanta · Data analyst by day, web-slinger of pipelines by night.</p>
     </footer>
 
     <script src="js/main.js"></script>
