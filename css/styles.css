@@ -55,6 +55,24 @@ body::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1'%3E%3Cpath d='M100 0 L100 200 M0 100 L200 100 M29 29 L171 171 M171 29 L29 171'/%3E%3Ccircle cx='100' cy='100' r='30'/%3E%3Ccircle cx='100' cy='100' r='60'/%3E%3Ccircle cx='100' cy='100' r='90'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 200px 200px;
   pointer-events: none;
+  will-change: transform;
+  animation: web-drift 28s ease-in-out infinite alternate;
+}
+
+@keyframes web-drift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(-30px, 20px, 0) rotate(2deg);
+  }
+}
+
+.site-header,
+main,
+.site-footer {
+  position: relative;
+  z-index: 10;
 }
 
 img {
@@ -774,8 +792,213 @@ a:hover {
 
   .pulse,
   .btn,
-  .work-card {
+  .work-card,
+  .web-bg,
+  .float-web {
     animation: none;
     transition: none;
+  }
+
+  .spidey-stage {
+    display: none;
+  }
+}
+
+/* ── Spidey scroll animations ── */
+
+.spidey-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.spidey-stage.is-reduced {
+  display: none;
+}
+
+.spidey-webs-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.web-line {
+  stroke-linecap: round;
+  transition: opacity 0.3s ease;
+}
+
+.web-line--active {
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.5));
+  animation: web-pulse 1.2s ease-in-out infinite;
+}
+
+.web-line--ghost {
+  stroke: rgba(226, 54, 54, 0.35);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 8;
+  animation: web-dash 2s linear infinite;
+}
+
+@keyframes web-pulse {
+  0%,
+  100% {
+    stroke-width: 2.5;
+    opacity: 0.85;
+  }
+  50% {
+    stroke-width: 3.2;
+    opacity: 1;
+  }
+}
+
+@keyframes web-dash {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+.spidey-slinger {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 90px;
+  height: 110px;
+  will-change: transform;
+  transform-origin: 50% 20%;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.55));
+  transition: filter 0.2s ease;
+}
+
+.spidey-slinger.is-fast {
+  filter: drop-shadow(0 12px 24px rgba(226, 54, 54, 0.45));
+}
+
+.spidey-slinger.is-fast .spidey-whoosh {
+  opacity: 1;
+  transform: scaleX(1.4);
+}
+
+.spidey-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.spidey-whoosh {
+  position: absolute;
+  top: 50%;
+  left: -30px;
+  width: 50px;
+  height: 8px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.spidey-stage.is-swinging .spidey-arm--web {
+  animation: arm-stretch 0.4s ease-in-out infinite alternate;
+}
+
+@keyframes arm-stretch {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(1.05);
+  }
+}
+
+.floating-webs {
+  position: absolute;
+  inset: 0;
+}
+
+.float-web {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%23e23636' stroke-width='1' opacity='0.5'%3E%3Cpath d='M40 0 L40 80 M0 40 L80 40 M12 12 L68 68 M68 12 L12 68'/%3E%3Ccircle cx='40' cy='40' r='15'/%3E%3Ccircle cx='40' cy='40' r='30'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: contain;
+  opacity: 0.25;
+  animation: float-sway 8s ease-in-out infinite;
+}
+
+.float-web--1 {
+  top: 12%;
+  left: 8%;
+  animation-delay: 0s;
+  animation-duration: 9s;
+}
+
+.float-web--2 {
+  top: 35%;
+  right: 6%;
+  animation-delay: -2s;
+  animation-duration: 11s;
+  width: 60px;
+  height: 60px;
+}
+
+.float-web--3 {
+  top: 58%;
+  left: 4%;
+  animation-delay: -4s;
+  animation-duration: 10s;
+  width: 100px;
+  height: 100px;
+}
+
+.float-web--4 {
+  top: 72%;
+  right: 10%;
+  animation-delay: -1s;
+  animation-duration: 12s;
+  width: 70px;
+  height: 70px;
+}
+
+.float-web--5 {
+  top: 22%;
+  left: 45%;
+  animation-delay: -3s;
+  animation-duration: 8s;
+  width: 50px;
+  height: 50px;
+  opacity: 0.15;
+}
+
+@keyframes float-sway {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  25% {
+    transform: translate3d(12px, -18px, 0) rotate(8deg) scale(1.05);
+  }
+  50% {
+    transform: translate3d(-8px, 10px, 0) rotate(-5deg) scale(0.95);
+  }
+  75% {
+    transform: translate3d(15px, 8px, 0) rotate(6deg) scale(1.02);
+  }
+}
+
+@media (max-width: 640px) {
+  .spidey-slinger {
+    width: 64px;
+    height: 78px;
+  }
+
+  .float-web--5 {
+    display: none;
   }
 }
