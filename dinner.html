@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>What's for Dinner? 🍽️</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Patrick+Hand&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --cream: #fff8f0;
+        --saffron: #ff9933;
+        --saffron-dark: #e67e22;
+        --leaf: #2d6a4f;
+        --leaf-light: #40916c;
+        --brown: #5c4033;
+        --warm-shadow: 0 12px 40px rgba(92, 64, 51, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Fredoka", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at 10% 20%, rgba(255, 153, 51, 0.25), transparent 40%),
+          radial-gradient(circle at 90% 80%, rgba(45, 106, 79, 0.2), transparent 45%),
+          linear-gradient(160deg, #fff8f0 0%, #ffe8cc 45%, #fff5e6 100%);
+        color: var(--brown);
+        overflow: hidden;
+      }
+
+      .page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1.25rem 5rem;
+        position: relative;
+      }
+
+      .plate {
+        position: absolute;
+        width: 280px;
+        height: 280px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #ffffff, #f0e6d8 70%);
+        box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.06), var(--warm-shadow);
+        opacity: 0.55;
+        pointer-events: none;
+      }
+
+      .plate-left {
+        top: 8%;
+        left: -4%;
+        transform: rotate(-12deg);
+      }
+
+      .plate-right {
+        bottom: 6%;
+        right: -6%;
+        transform: rotate(18deg);
+      }
+
+      .card {
+        position: relative;
+        z-index: 2;
+        width: min(520px, 100%);
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(10px);
+        border: 3px solid rgba(255, 153, 51, 0.35);
+        border-radius: 28px;
+        padding: clamp(1.75rem, 5vw, 2.75rem);
+        box-shadow: var(--warm-shadow);
+        text-align: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.5rem;
+        font-family: "Patrick Hand", cursive;
+        font-size: 1.25rem;
+        color: var(--leaf);
+        letter-spacing: 0.04em;
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(2rem, 7vw, 2.75rem);
+        line-height: 1.1;
+        color: var(--brown);
+      }
+
+      .subtitle {
+        margin: 0 0 2rem;
+        font-size: 1.05rem;
+        color: #7a5c4a;
+      }
+
+      .choices {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        align-items: center;
+      }
+
+      .btn {
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1.15rem;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 1rem 1.75rem;
+        min-width: 240px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .btn:active {
+        transform: scale(0.97);
+      }
+
+      .btn-safe {
+        background: linear-gradient(135deg, var(--leaf-light), var(--leaf));
+        color: white;
+        box-shadow: 0 8px 0 #1b4332, 0 14px 28px rgba(45, 106, 79, 0.35);
+      }
+
+      .btn-safe:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 0 #1b4332, 0 18px 32px rgba(45, 106, 79, 0.4);
+      }
+
+      .btn-fancy-wrap {
+        position: relative;
+        width: 100%;
+        min-height: 58px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .btn-fancy {
+        position: absolute;
+        background: linear-gradient(135deg, #ffd700, #ff8c00);
+        color: #4a2c00;
+        box-shadow: 0 8px 0 #c76b00, 0 14px 28px rgba(255, 140, 0, 0.35);
+        transition: left 0.08s linear, top 0.08s linear, opacity 0.2s ease, transform 0.2s ease;
+        z-index: 5;
+      }
+
+      .btn-fancy:hover {
+        box-shadow: 0 10px 0 #c76b00, 0 18px 32px rgba(255, 140, 0, 0.45);
+      }
+
+      .btn-fancy.vanish {
+        opacity: 0;
+        transform: scale(0.2) rotate(20deg);
+        pointer-events: none;
+      }
+
+      .taunt {
+        margin: 1.25rem 0 0;
+        min-height: 1.5rem;
+        font-family: "Patrick Hand", cursive;
+        font-size: 1.2rem;
+        color: var(--saffron-dark);
+      }
+
+      .attempts {
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+        color: #9a7b6a;
+      }
+
+      .result {
+        display: none;
+        margin-top: 1.5rem;
+        padding: 1.25rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(64, 145, 108, 0.15), rgba(255, 153, 51, 0.12));
+        animation: pop 0.45s ease;
+      }
+
+      .result.show {
+        display: block;
+      }
+
+      .result h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.6rem;
+        color: var(--leaf);
+      }
+
+      .result p {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .cockroach {
+        position: fixed;
+        width: 90px;
+        height: 90px;
+        pointer-events: none;
+        z-index: 100;
+        opacity: 0;
+        transform: scale(0.3) rotate(-30deg);
+        transition: opacity 0.15s ease, transform 0.2s ease;
+        filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+      }
+
+      .cockroach.show {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+        animation: scurry 1.1s ease forwards;
+      }
+
+      @keyframes scurry {
+        0% {
+          transform: scale(0.5) rotate(-20deg) translate(0, 0);
+          opacity: 1;
+        }
+        15% {
+          transform: scale(1.2) rotate(5deg) translate(0, 0);
+          opacity: 1;
+        }
+        40% {
+          transform: scale(1.1) rotate(-12deg) translate(-10px, 6px);
+          opacity: 1;
+        }
+        70% {
+          transform: scale(1) rotate(8deg) translate(14px, -4px);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(0.7) rotate(30deg) translate(50px, 35px);
+          opacity: 0;
+        }
+      }
+
+      @keyframes pop {
+        0% {
+          transform: scale(0.9);
+          opacity: 0;
+        }
+        60% {
+          transform: scale(1.03);
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      @keyframes wiggle {
+        0%,
+        100% {
+          transform: rotate(0deg);
+        }
+        25% {
+          transform: rotate(-3deg);
+        }
+        75% {
+          transform: rotate(3deg);
+        }
+      }
+
+      .card.shake {
+        animation: wiggle 0.35s ease;
+      }
+
+      .emoji-row {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        letter-spacing: 0.35rem;
+      }
+
+      @media (max-width: 480px) {
+        .btn {
+          min-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="plate plate-left" aria-hidden="true"></div>
+      <div class="plate plate-right" aria-hidden="true"></div>
+
+      <div class="card" id="card">
+        <p class="eyebrow">Tonight's very important decision</p>
+        <div class="emoji-row" aria-hidden="true">🍛 🫓 🥗</div>
+        <h1>What's for dinner?</h1>
+        <p class="subtitle">Pick your craving. Both options are totally fair. Probably.</p>
+
+        <div class="choices">
+          <button class="btn btn-safe" id="rotiBtn" type="button">🫓 Roti &amp; Sabji</button>
+
+          <div class="btn-fancy-wrap" id="fancyArena">
+            <button class="btn btn-fancy" id="fancyBtn" type="button">✨ Something Fancy</button>
+          </div>
+        </div>
+
+        <p class="taunt" id="taunt" aria-live="polite"></p>
+        <p class="attempts" id="attempts"></p>
+
+        <div class="result" id="result">
+          <h2>Roti &amp; Sabji it is! 🎉</h2>
+          <p>Wise choice. Comfort food wins again. I'll get the tawa ready.</p>
+        </div>
+      </div>
+    </div>
+
+    <img
+      class="cockroach"
+      id="cockroach"
+      alt=""
+      aria-hidden="true"
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cellipse cx='60' cy='62' rx='28' ry='20' fill='%233d2914'/%3E%3Cellipse cx='60' cy='58' rx='22' ry='16' fill='%235c3d1e'/%3E%3Cpath d='M32 50 Q20 35 10 30 M32 58 Q18 58 8 58 M32 66 Q20 80 12 88' stroke='%233d2914' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3Cpath d='M88 50 Q100 35 110 30 M88 58 Q102 58 112 58 M88 66 Q100 80 108 88' stroke='%233d2914' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3Cpath d='M48 38 L42 22 M60 34 L60 18 M72 38 L78 22' stroke='%233d2914' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='56' r='4' fill='%23ffeb3b'/%3E%3Ccircle cx='70' cy='56' r='4' fill='%23ffeb3b'/%3E%3Ccircle cx='51' cy='56' r='1.5' fill='%23000'/%3E%3Ccircle cx='71' cy='56' r='1.5' fill='%23000'/%3E%3Cpath d='M52 68 Q60 74 68 68' stroke='%232a1a0a' stroke-width='2' fill='none'/%3E%3C/svg%3E"
+    />
+
+    <script>
+      const fancyBtn = document.getElementById("fancyBtn");
+      const fancyArena = document.getElementById("fancyArena");
+      const cockroach = document.getElementById("cockroach");
+      const taunt = document.getElementById("taunt");
+      const attemptsEl = document.getElementById("attempts");
+      const card = document.getElementById("card");
+      const rotiBtn = document.getElementById("rotiBtn");
+      const result = document.getElementById("result");
+
+      let attempts = 0;
+      let isVanishing = false;
+      let respawnTimer = null;
+
+      const taunts = [
+        "Nope! The cockroach ate your fancy dinner.",
+        "Fancy? In this economy? Nice try.",
+        "The kitchen said: roti sabji only tonight.",
+        "Cockroach intercepted your click. Order restored.",
+        "Something fancy has left the chat. 🪳",
+        "That button is allergic to commitment.",
+        "Even the cockroach chose roti sabji.",
+        "Fancy dinner.exe has stopped working.",
+      ];
+
+      function centerFancyButton() {
+        fancyBtn.style.position = "relative";
+        fancyBtn.style.left = "0";
+        fancyBtn.style.top = "0";
+      }
+
+      function randomSpot() {
+        const arena = fancyArena.getBoundingClientRect();
+        const btn = fancyBtn.getBoundingClientRect();
+        const maxX = Math.max(0, arena.width - btn.width);
+        const maxY = Math.max(0, arena.height - btn.height);
+        const x = Math.random() * maxX;
+        const y = Math.random() * maxY;
+        fancyBtn.style.position = "absolute";
+        fancyBtn.style.left = `${x}px`;
+        fancyBtn.style.top = `${y}px`;
+      }
+
+      function showCockroach(x, y) {
+        cockroach.style.left = `${x - 45}px`;
+        cockroach.style.top = `${y - 45}px`;
+        cockroach.classList.remove("show");
+        void cockroach.offsetWidth;
+        cockroach.classList.add("show");
+      }
+
+      function vanishFancy(clientX, clientY) {
+        if (isVanishing) return;
+        isVanishing = true;
+        attempts += 1;
+
+        fancyBtn.classList.add("vanish");
+        showCockroach(clientX, clientY);
+        card.classList.add("shake");
+        taunt.textContent = taunts[(attempts - 1) % taunts.length];
+        attemptsEl.textContent =
+          attempts === 1
+            ? "Fancy escape attempts: 1"
+            : `Fancy escape attempts: ${attempts} (the cockroach is winning)`;
+
+        setTimeout(() => card.classList.remove("shake"), 350);
+
+        clearTimeout(respawnTimer);
+        respawnTimer = setTimeout(() => {
+          fancyBtn.classList.remove("vanish");
+          randomSpot();
+          isVanishing = false;
+        }, 900);
+      }
+
+      function dodge() {
+        if (isVanishing) return;
+        randomSpot();
+      }
+
+      fancyBtn.addEventListener("mouseenter", dodge);
+      fancyBtn.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) dodge();
+      });
+
+      fancyBtn.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        vanishFancy(touch.clientX, touch.clientY);
+      });
+
+      fancyBtn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        vanishFancy(e.clientX, e.clientY);
+      });
+
+      fancyBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        vanishFancy(e.clientX, e.clientY);
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (isVanishing) return;
+        const rect = fancyBtn.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+        if (dist < 70) dodge();
+      });
+
+      rotiBtn.addEventListener("click", () => {
+        result.classList.add("show");
+        taunt.textContent = "See? That one actually works.";
+        fancyBtn.disabled = true;
+        fancyBtn.style.opacity = "0.35";
+        fancyBtn.style.pointerEvents = "none";
+      });
+
+      centerFancyButton();
+      taunt.textContent = "Go on, try the fancy button… if you can.";
+    </script>
+  </body>
+</html>
