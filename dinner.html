@@ -219,24 +219,28 @@
       .cockroach.show {
         opacity: 1;
         transform: scale(1) rotate(0deg);
-        animation: scurry 0.55s ease forwards;
+        animation: scurry 1.1s ease forwards;
       }
 
       @keyframes scurry {
         0% {
-          transform: scale(1) rotate(0deg) translate(0, 0);
+          transform: scale(0.5) rotate(-20deg) translate(0, 0);
+          opacity: 1;
         }
-        25% {
-          transform: scale(1.1) rotate(-15deg) translate(-12px, 8px);
+        15% {
+          transform: scale(1.2) rotate(5deg) translate(0, 0);
+          opacity: 1;
         }
-        50% {
-          transform: scale(1) rotate(10deg) translate(18px, -6px);
+        40% {
+          transform: scale(1.1) rotate(-12deg) translate(-10px, 6px);
+          opacity: 1;
         }
-        75% {
-          transform: scale(0.9) rotate(-8deg) translate(-8px, 12px);
+        70% {
+          transform: scale(1) rotate(8deg) translate(14px, -4px);
+          opacity: 0.9;
         }
         100% {
-          transform: scale(0.6) rotate(25deg) translate(40px, 30px);
+          transform: scale(0.7) rotate(30deg) translate(50px, 35px);
           opacity: 0;
         }
       }
@@ -394,7 +398,7 @@
           fancyBtn.classList.remove("vanish");
           randomSpot();
           isVanishing = false;
-        }, 700);
+        }, 900);
       }
 
       function dodge() {
