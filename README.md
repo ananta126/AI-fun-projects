@@ -1,43 +1,67 @@
-# Ananta Kumar Mohanta — Portfolio
+# LOOKBOOK
 
-Personal site for a senior data & analytics professional working in banking data migration, governance, risk, and automation.
+**Find your style. Make it yours.**
 
-## Live site (one-time setup)
+A premium fashion discovery platform inspired by Pinterest's visual discovery, focused entirely on fashion. Discover outfits, save inspiration, build your style profile, and find similar products.
 
-### GitHub Pages
+## Features
 
-1. Open **Settings → Pages** in this repo.
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-3. Push to `main` (or run the **Deploy to GitHub Pages** workflow manually under **Actions**).
+- **Visual Discovery** — Pinterest-style masonry grid with editorial aesthetics
+- **Explore & Search** — Filter by style, occasion, season, color, budget (INR)
+- **Outfit Detail** — Style breakdown with detected pieces
+- **Save & Boards** — Pinterest-inspired boards for organizing looks
+- **Style Profile** — Your Style DNA with preferences and distribution
+- **See It On Me** — Profile onboarding for fit recommendations (mock MVP)
+- **Fit Analysis** — Deterministic fit scoring (not real virtual try-on)
+- **Find This Look** — Similar product recommendations by category
+- **Trending** — Editorial-style trend analytics
+- **Dark Mode** — Light (default) and dark themes
 
-After the workflow finishes, the site is published at:
+## Tech Stack
 
-**https://ananta126.github.io/AI-fun-projects/**
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS v4
+- next-themes
+- Local storage for user state (MVP)
 
-### Netlify
-
-1. Go to [app.netlify.com/start](https://app.netlify.com/start) and import this GitHub repo.
-2. Use the defaults (no build command; publish directory is `.` via `netlify.toml`).
-3. Click **Deploy**.
-
-Netlify assigns a URL like `https://<random-name>.netlify.app`. You can add a custom domain later.
-
-## Local preview
-
-> `localhost` in your browser only works if the server runs on **your** machine — not in a cloud agent VM.
+## Getting Started
 
 ```bash
-git clone https://github.com/ananta126/AI-fun-projects.git
-cd AI-fun-projects
-python3 -m http.server 8080
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:8080`.
+Open [http://localhost:3000](http://localhost:3000).
 
-Or open `index.html` directly in a browser (no server required).
+## Project Structure
 
-## Files
+```
+app/           # Pages and routes
+components/    # UI and fashion components
+data/          # Mock data layer (images, outfits, products)
+lib/           # Utilities, analytics, constants
+services/      # Business logic (outfit, product, user, recommendation)
+types/         # TypeScript interfaces
+```
 
-- `index.html` — main page
-- `css/styles.css`, `js/main.js` — styles and navigation
-- `assets/Ananta_Mohanta_Resume.pdf` — downloadable résumé
+## Architecture Notes
+
+- **Mock data** is isolated in `data/` for easy replacement
+- **Recommendation engine** in `services/recommendation-service.ts` is deterministic
+- **Fit analysis** is clearly separated as mock — not real AI
+- **Analytics** uses an abstraction layer in `lib/analytics.ts`
+- Future: Supabase, real auth, AI vision, vector search, affiliate links
+
+## Scripts
+
+```bash
+npm run dev      # Development server
+npm run build    # Production build
+npm run start    # Start production server
+npm run lint     # ESLint
+```
+
+## License
+
+Private — demo/development use.
