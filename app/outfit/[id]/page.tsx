@@ -10,6 +10,11 @@ import { MasonryGrid } from "@/components/fashion/MasonryGrid";
 import { Button } from "@/components/ui/Button";
 import { outfitService } from "@/services/outfit-service";
 import { formatTags } from "@/lib/utils";
+import { generateOutfitParams } from "@/lib/static-params";
+
+export function generateStaticParams() {
+  return generateOutfitParams();
+}
 
 export async function generateMetadata({
   params,

@@ -25,6 +25,14 @@ A premium fashion discovery platform inspired by Pinterest's visual discovery, f
 - next-themes
 - Local storage for user state (MVP)
 
+## Live POC (GitHub Pages)
+
+After merging to `main`, the site deploys automatically via GitHub Actions.
+
+**URL:** https://ananta126.github.io/AI-fun-projects/
+
+> One-time setup: In repo **Settings → Pages**, set **Source** to **GitHub Actions**.
+
 ## Getting Started
 
 ```bash

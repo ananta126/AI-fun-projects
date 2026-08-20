@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { MasonryGrid } from "@/components/fashion/MasonryGrid";
 import { outfitService } from "@/services/outfit-service";
+import { generateStyleParams } from "@/lib/static-params";
+
+export function generateStaticParams() {
+  return generateStyleParams();
+}
 
 export async function generateMetadata({
   params,

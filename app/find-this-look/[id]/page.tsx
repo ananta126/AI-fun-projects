@@ -5,6 +5,11 @@ import { ProductCard } from "@/components/fashion/ProductCard";
 import { outfitService } from "@/services/outfit-service";
 import { productService } from "@/services/product-service";
 import { formatPrice } from "@/lib/utils";
+import { generateOutfitParams } from "@/lib/static-params";
+
+export function generateStaticParams() {
+  return generateOutfitParams();
+}
 
 export async function generateMetadata({
   params,
