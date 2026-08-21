@@ -5,15 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatPrice(price: number, currency = "INR"): string {
-  if (currency === "INR") {
-    return `₹${price.toLocaleString("en-IN")}`;
-  }
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
-    price
-  );
+export function formatInr(amount: number): string {
+  return `₹${amount.toLocaleString("en-IN")}`;
 }
 
-export function formatTags(tags: string[], separator = " · "): string {
-  return tags.join(separator).toUpperCase();
+export function formatInrCrore(amount: number): string {
+  const crore = amount / 10_000_000;
+  return `₹${crore.toFixed(1)} Cr`;
+}
+
+export function uid(prefix = "id"): string {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function nowIso(): string {
+  return new Date().toISOString();
 }

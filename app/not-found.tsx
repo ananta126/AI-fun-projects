@@ -1,19 +1,15 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
 
 export default function NotFound() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
-      <p className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
-        404
-      </p>
-      <h1 className="font-serif text-3xl md:text-4xl mb-4">Look not found</h1>
-      <p className="text-muted-foreground text-sm mb-8 max-w-md">
-        This look may have been removed or the link is incorrect.
-      </p>
-      <Link href="/explore">
-        <Button>Explore Looks</Button>
-      </Link>
+    <div className="grid min-h-screen place-items-center px-4">
+      <div className="text-center">
+        <p className="font-mono text-xs uppercase tracking-widest text-muted">404</p>
+        <h1 className="mt-2 font-serif text-3xl">File not on this desk</h1>
+        <Link href="/" className="mt-4 inline-block text-sm text-teal">
+          Return to QuestBank
+        </Link>
+      </div>
     </div>
   );
 }

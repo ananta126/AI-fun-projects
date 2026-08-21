@@ -1,48 +1,38 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
-import { Header } from "@/components/layout/Header";
-import { MobileNav } from "@/components/layout/MobileNav";
-import { AppProvider } from "@/components/providers/AppProvider";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const sans = IBM_Plex_Sans({
+  variable: "--font-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const mono = IBM_Plex_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
+const serif = Source_Serif_4({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: ["500", "600"],
 });
 
 export const metadata: Metadata = {
   title: {
-    default: "LOOKBOOK — Find your style. Make it yours.",
-    template: "%s | LOOKBOOK",
+    default: "QuestBank — The Missing ₹4.8 Crore",
+    template: "%s | QuestBank",
   },
   description:
-    "Discover outfits, save inspiration, and find looks that work for you. A premium fashion discovery platform.",
-  openGraph: {
-    title: "LOOKBOOK — Find your style. Make it yours.",
-    description: "Discover outfits, save inspiration, and find looks that work for you.",
-    type: "website",
-    siteName: "LOOKBOOK",
-  },
+    "A story-driven banking investigation. Learn SQL, data quality, and analytics by solving a fraud dashboard that doesn't add up.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable} h-full`} suppressHydrationWarning>
-      <body className="min-h-full flex flex-col antialiased bg-background text-foreground">
-        <ThemeProvider>
-          <AppProvider>
-            <Header />
-            <main className="flex-1 pb-20 md:pb-0">{children}</main>
-            <MobileNav />
-          </AppProvider>
-        </ThemeProvider>
-      </body>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable} h-full`}>
+      <body className="min-h-full antialiased">{children}</body>
     </html>
   );
 }

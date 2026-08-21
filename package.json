@@ -1,21 +1,22 @@
 {
-  "name": "lookbook",
+  "name": "questbank",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:pages": "GITHUB_PAGES=true next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify:data": "npx --yes tsx scripts/verify-dataset.ts"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@supabase/supabase-js": "^2.57.4",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.32.0",
     "next": "16.3.1",
-    "next-themes": "^0.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sql.js": "^1.13.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -23,9 +24,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sql.js": "^1.4.9",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
+    "tsx": "^4.20.5",
     "typescript": "^5"
   }
 }

@@ -1,164 +1,126 @@
-export type Gender = "men" | "women" | "unisex";
+export type ChallengeType = "multiple_choice" | "numerical" | "sql" | "text";
 
-export type StyleTag =
-  | "Minimal"
-  | "Streetwear"
-  | "Old Money"
-  | "Smart Casual"
-  | "Formal"
-  | "Casual"
-  | "Vintage"
-  | "Y2K"
-  | "Athleisure";
+export type StageStatus = "locked" | "available" | "in_progress" | "completed";
 
-export type Occasion =
-  | "Everyday"
-  | "Date"
-  | "Office"
-  | "Wedding"
-  | "Party"
-  | "Travel";
-
-export type Season = "Summer" | "Winter" | "Monsoon" | "Spring";
-
-export type ColorTag =
-  | "Black"
-  | "White"
-  | "Beige"
-  | "Navy"
-  | "Brown"
-  | "Green"
-  | "Grey"
-  | "Other";
-
-export type BudgetRange =
-  | "under-1000"
-  | "1000-2500"
-  | "2500-5000"
-  | "5000-plus";
-
-export type BodyPreference = "slim" | "regular" | "relaxed";
-export type StylePreference = "fitted" | "balanced" | "oversized";
-export type ItemType = "shirt" | "trousers" | "shoes" | "accessories" | "jacket" | "dress";
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  height?: number;
-  usualSize?: string;
-  chest?: number;
-  waist?: number;
-  shoulder?: number;
-  inseam?: number;
-  bodyPreference?: BodyPreference;
-  stylePreference?: StylePreference;
-  favoriteStyles: StyleTag[];
-  favoriteColors: ColorTag[];
-  favoriteOccasions: Occasion[];
-  profileImage?: string;
-  photoUrl?: string;
+export interface Customer {
+  customer_id: string;
+  full_name: string;
+  city: string;
+  kyc_status: "VERIFIED" | "PENDING" | "EXPIRED";
+  risk_segment: "LOW" | "MEDIUM" | "HIGH";
+  account_opened_on: string;
 }
 
-export interface OutfitItem {
-  id: string;
-  type: ItemType;
-  name: string;
-  brand: string;
-  image: string;
-  price: number;
-  currency: string;
-  color: string;
-  fit: string;
+export interface Transaction {
+  txn_id: string;
+  customer_id: string;
+  amount_inr: number;
+  channel: string;
   category: string;
-  productUrl?: string;
+  txn_ts: string;
+  status: "SETTLED" | "PENDING" | "REVERSED";
+  is_international: number;
 }
 
-export interface Outfit {
+export interface FraudAlert {
+  alert_id: string;
+  txn_id: string;
+  alert_ts: string;
+  rule_code: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  status: "OPEN" | "CLEARED" | "ESCALATED";
+}
+
+export interface ChallengeDataset {
+  customers: Customer[];
+  transactions: Transaction[];
+  fraud_alerts: FraudAlert[];
+}
+
+export interface ChallengeDefinition {
+  id: string;
+  stageId: string;
+  title: string;
+  description: string;
+  type: ChallengeType;
+  datasetRef: string;
+  options?: string[];
+  expectedAnswer?: string | number | string[];
+  evaluation: "exact" | "numeric_tolerance" | "sql_resultset" | "rubric";
+  reward?: number;
+}
+
+export interface StageDefinition {
+  id: string;
+  order: number;
+  title: string;
+  shortTitle: string;
+  rewardInr: number;
+  briefing: TimelineEvent[];
+  challenges: ChallengeDefinition[];
+}
+
+export interface TimelineEvent {
+  time: string;
+  from: string;
+  channel: "email" | "slack" | "note" | "system";
+  subject?: string;
+  body: string;
+}
+
+export interface ModuleDefinition {
   id: string;
   title: string;
-  image: string;
-  aspectRatio: number;
-  category: string;
-  gender: Gender;
-  styles: StyleTag[];
-  occasions: Occasion[];
-  seasons: Season[];
-  colors: ColorTag[];
-  description: string;
-  items: OutfitItem[];
-  tags: string[];
-  likes: number;
-  saves: number;
-  creator?: string;
-  budgetRange: BudgetRange;
+  subtitle: string;
+  priceInr: number;
+  maxRewardInr: number;
+  stages: StageDefinition[];
 }
 
-export interface Product {
-  id: string;
-  name: string;
-  brand: string;
-  category: ItemType;
-  price: number;
-  currency: string;
-  image: string;
-  colors: string[];
-  fit: string;
-  styles: StyleTag[];
-  productUrl?: string;
-  similarity?: number;
-  outfitItemId?: string;
+export interface RewardEntry {
+  stageId: string;
+  label: string;
+  amountInr: number;
+  unlockedAt: string;
 }
 
-export interface Board {
+export interface SubmissionRecord {
   id: string;
+  challengeId: string;
+  stageId: string;
+  type: ChallengeType;
+  payload: unknown;
+  passed: boolean;
+  feedback: string;
+  submittedAt: string;
+}
+
+export interface UserProgress {
   userId: string;
-  name: string;
-  description?: string;
-  coverImage?: string;
-  outfitIds: string[];
-  createdAt: string;
+  moduleId: string;
+  paidAmount: number;
+  rewardUnlocked: number;
+  maxReward: number;
+  currentStageOrder: number;
+  completedStageIds: string[];
+  completedChallengeIds: string[];
+  rewardHistory: RewardEntry[];
+  submissions: SubmissionRecord[];
+  skillScore: number | null;
+  moduleCompleted: boolean;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
-export interface RecommendationResult {
-  score: number;
-  reasons: string[];
-  matchedAttributes: string[];
-  suggestions: string[];
-}
-
-export interface FitAnalysis {
-  overall: number;
-  proportion: number;
-  silhouette: number;
-  length: number;
-  color: number;
-  versatility: number;
-  recommendation: string;
-  recommendedFit: {
-    shirt: string;
-    trousers: string;
-    shoes: string;
-  };
-}
-
-export interface OutfitFilters {
-  gender?: Gender[];
-  styles?: StyleTag[];
-  occasions?: Occasion[];
-  seasons?: Season[];
-  colors?: ColorTag[];
-  budget?: BudgetRange[];
-  query?: string;
-}
-
-export interface TrendItem {
-  name: string;
-  change: number;
-  category: "style" | "color" | "silhouette" | "look";
-}
-
-export interface StyleDistribution {
-  style: string;
-  percentage: number;
+export interface AnalyticsEvent {
+  name:
+    | "module_started"
+    | "stage_started"
+    | "challenge_submitted"
+    | "challenge_passed"
+    | "stage_completed"
+    | "reward_unlocked"
+    | "module_completed";
+  at: string;
+  properties?: Record<string, string | number | boolean>;
 }

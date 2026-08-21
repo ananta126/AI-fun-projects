@@ -1,39 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8f6f2;
-  --foreground: #1a1a1a;
-  --muted: #f0ede8;
-  --muted-foreground: #6b6b6b;
-  --border: #e5e0d8;
-  --accent: #6b3a3a;
-  --accent-foreground: #f8f6f2;
-}
-
-.dark {
-  --background: #141414;
-  --foreground: #f0ede8;
-  --muted: #1f1f1f;
-  --muted-foreground: #9a9a9a;
-  --border: #2a2a2a;
-  --accent: #c4a4a4;
-  --accent-foreground: #141414;
+  --bg: #070b14;
+  --bg-elevated: #0d1422;
+  --bg-card: #111a2b;
+  --line: #243044;
+  --text: #e8edf7;
+  --muted: #8b97ad;
+  --gold: #d4af37;
+  --gold-dim: #9a7b24;
+  --teal: #4fd1c5;
+  --teal-dim: #2a7a74;
+  --danger: #f07178;
+  --ok: #7fd99a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-card: var(--bg-card);
+  --color-line: var(--line);
+  --color-text: var(--text);
   --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-playfair);
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-dim);
+  --color-teal: var(--teal);
+  --color-teal-dim: var(--teal-dim);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
 }
 
 * {
-  border-color: var(--border);
+  border-color: var(--line);
 }
 
 html {
@@ -41,15 +42,37 @@ html {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), system-ui, sans-serif;
-}
-
-.font-serif {
-  font-family: var(--font-playfair), Georgia, serif;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(79, 209, 197, 0.08), transparent 50%),
+    radial-gradient(900px 400px at 100% 0%, rgba(212, 175, 55, 0.07), transparent 45%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--teal) 30%, transparent);
+}
+
+.scanline {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(255, 255, 255, 0.015) 50%
+  );
+  background-size: 100% 3px;
+}
+
+@keyframes pulse-gold {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(212, 175, 55, 0);
+  }
+}
+
+.reward-pulse {
+  animation: pulse-gold 2.4s ease-in-out infinite;
 }

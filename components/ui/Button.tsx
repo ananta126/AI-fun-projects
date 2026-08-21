@@ -1,38 +1,29 @@
 import { cn } from "@/lib/utils";
 import type { ButtonHTMLAttributes } from "react";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "ghost" | "outline";
-  size?: "sm" | "md" | "lg";
-}
+type Variant = "primary" | "ghost" | "gold" | "danger" | "outline";
 
 export function Button({
   className,
   variant = "primary",
-  size = "md",
-  children,
   ...props
-}: ButtonProps) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+  const styles: Record<Variant, string> = {
+    primary:
+      "bg-teal text-bg font-medium hover:brightness-110 disabled:opacity-40",
+    gold: "bg-gold text-bg font-semibold hover:brightness-110 disabled:opacity-40",
+    ghost: "bg-transparent text-text hover:bg-white/5",
+    outline: "border border-line bg-transparent hover:bg-white/5",
+    danger: "bg-danger/20 text-danger hover:bg-danger/30",
+  };
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-50",
-        {
-          "bg-foreground text-background hover:opacity-90": variant === "primary",
-          "bg-transparent border border-border text-foreground hover:bg-muted":
-            variant === "secondary",
-          "bg-transparent text-foreground hover:bg-muted": variant === "ghost",
-          "border border-foreground/20 bg-transparent hover:border-foreground/40":
-            variant === "outline",
-          "px-4 py-2 text-sm": size === "sm",
-          "px-6 py-2.5 text-sm": size === "md",
-          "px-8 py-3 text-base": size === "lg",
-        },
-        className
+        "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm transition disabled:cursor-not-allowed",
+        styles[variant],
+        className,
       )}
       {...props}
-    >
-      {children}
-    </button>
+    />
   );
 }
