@@ -1,4 +1,5 @@
 import { QUEST_MODULE } from "@/data/module";
+import { computeSkillScore } from "@/lib/skill-score";
 import type { AnalyticsEvent, RewardEntry, SubmissionRecord, UserProgress } from "@/types";
 import { nowIso, uid } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ export function emptyProgress(): UserProgress {
     completedChallengeIds: [],
     rewardHistory: [],
     submissions: [],
+    notes: {},
     skillScore: null,
     moduleCompleted: false,
     startedAt: null,
@@ -30,7 +32,8 @@ export function loadProgress(): UserProgress {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyProgress();
-    return { ...emptyProgress(), ...(JSON.parse(raw) as UserProgress) };
+    const parsed = JSON.parse(raw) as UserProgress;
+    return { ...emptyProgress(), ...parsed, notes: parsed.notes ?? {} };
   } catch {
     return emptyProgress();
   }
@@ -128,6 +131,10 @@ export function completeStage(progress: UserProgress, stageId: string): UserProg
     currentStageOrder: moduleCompleted ? stage.order : nextOrder,
     moduleCompleted,
     completedAt: moduleCompleted ? nowIso() : progress.completedAt,
+    skillScore: moduleCompleted ? computeSkillScore({
+      ...progress,
+      completedStageIds: [...progress.completedStageIds, stageId],
+    }) : progress.skillScore,
   };
   saveProgress(next);
   track("stage_completed", { stageId, reward: amount });
@@ -148,6 +155,64 @@ export function resetProgress(): UserProgress {
     window.localStorage.removeItem(EVENTS_KEY);
     window.dispatchEvent(new Event("questbank-progress"));
   }
+  return next;
+}
+
+export function saveNotes(progress: UserProgress, key: string, text: string): UserProgress {
+  const next: UserProgress = {
+    ...progress,
+    notes: { ...progress.notes, [key]: text },
+  };
+  saveProgress(next);
+  return next;
+}
+
+export function forceCompleteStage(progress: UserProgress, stageId: string): UserProgress {
+  let next = progress.paidAmount ? progress : startModule(progress);
+  const target = QUEST_MODULE.stages.find((s) => s.id === stageId);
+  if (!target) return next;
+  for (const stage of QUEST_MODULE.stages) {
+    if (stage.order > target.order) break;
+    if (!next.completedStageIds.includes(stage.id)) {
+      const challengeIds = stage.challenges.map((c) => c.id);
+      next = {
+        ...next,
+        completedChallengeIds: Array.from(new Set([...next.completedChallengeIds, ...challengeIds])),
+      };
+      next = completeStage(next, stage.id);
+    }
+  }
+  return next;
+}
+
+export function uncompleteFromStage(progress: UserProgress, stageId: string): UserProgress {
+  const target = QUEST_MODULE.stages.find((s) => s.id === stageId);
+  if (!target) return progress;
+  const drop = new Set(
+    QUEST_MODULE.stages.filter((s) => s.order >= target.order).map((s) => s.id),
+  );
+  const dropChallenges = new Set(
+    QUEST_MODULE.stages
+      .filter((s) => s.order >= target.order)
+      .flatMap((s) => s.challenges.map((c) => c.id)),
+  );
+  const rewardHistory = progress.rewardHistory.filter((row) => !drop.has(row.stageId));
+  const rewardUnlocked = Math.min(
+    progress.maxReward,
+    rewardHistory.reduce((sum, row) => sum + row.amountInr, 0),
+  );
+  const next: UserProgress = {
+    ...progress,
+    completedStageIds: progress.completedStageIds.filter((id) => !drop.has(id)),
+    completedChallengeIds: progress.completedChallengeIds.filter((id) => !dropChallenges.has(id)),
+    rewardHistory,
+    rewardUnlocked,
+    currentStageOrder: progress.paidAmount ? target.order : 0,
+    moduleCompleted: false,
+    completedAt: null,
+    skillScore: null,
+  };
+  saveProgress(next);
   return next;
 }
 

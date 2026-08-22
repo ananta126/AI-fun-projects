@@ -13,7 +13,7 @@ export interface Customer {
 
 export interface Transaction {
   txn_id: string;
-  customer_id: string;
+  customer_id: string | null;
   amount_inr: number;
   channel: string;
   category: string;
@@ -106,6 +106,7 @@ export interface UserProgress {
   completedChallengeIds: string[];
   rewardHistory: RewardEntry[];
   submissions: SubmissionRecord[];
+  notes: Record<string, string>;
   skillScore: number | null;
   moduleCompleted: boolean;
   startedAt: string | null;

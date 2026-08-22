@@ -121,8 +121,59 @@ export const QUEST_MODULE: ModuleDefinition = {
       title: "The Data Quality Problem",
       shortTitle: "Data Quality Problem",
       rewardInr: 30,
-      briefing: [],
-      challenges: [],
+      briefing: [
+        {
+          time: "11:04 AM",
+          from: "Priya Nair · Head of Fraud Analytics",
+          channel: "slack",
+          body: "The missing-alert list is real. Engineering says the source files are clean. I don't buy it. They just dropped an extract they call 'raw landing'. It looks… chewed.",
+        },
+        {
+          time: "11:12 AM",
+          from: "Neha Kulkarni · Data Platform",
+          channel: "email",
+          subject: "RE: July extract integrity",
+          body: "Landing zone files are as received from the core. If your warehouse snapshot is missing alerts, that's a consumption bug, not ours. Query customers_raw, transactions_raw, fraud_alerts_raw if you must.",
+        },
+        {
+          time: "11:19 AM",
+          from: "Investigation notes",
+          channel: "note",
+          body: "Treat the raw tables as hostile. Look for duplicate transaction IDs, NULL or impossible customer IDs, duplicated alerts, and timestamps that cannot be right.",
+        },
+      ],
+      challenges: [
+        {
+          id: "s3-sql-dup-txn",
+          stageId: "stage-3",
+          title: "Duplicate tickets",
+          description:
+            "In transactions_raw, find transaction IDs that appear more than once. Return a column named txn_id. Distinct IDs are enough.",
+          type: "sql",
+          datasetRef: "challenge_raw_v1",
+          evaluation: "sql_resultset",
+        },
+        {
+          id: "s3-sql-bad-cust",
+          stageId: "stage-3",
+          title: "Orphaned money movement",
+          description:
+            "Identify transactions_raw rows with no valid customer ID — customer_id is NULL, or it does not exist in customers_raw. Return txn_id.",
+          type: "sql",
+          datasetRef: "challenge_raw_v1",
+          evaluation: "sql_resultset",
+        },
+        {
+          id: "s3-sql-dup-alert",
+          stageId: "stage-3",
+          title: "Alerts that cloned themselves",
+          description:
+            "Find customers whose fraud alerts are duplicated: more than one fraud_alerts_raw row for the same txn_id. Return customer_id.",
+          type: "sql",
+          datasetRef: "challenge_raw_v1",
+          evaluation: "sql_resultset",
+        },
+      ],
     },
     {
       id: "stage-4",
@@ -130,8 +181,42 @@ export const QUEST_MODULE: ModuleDefinition = {
       title: "Build the Evidence",
       shortTitle: "Build the Evidence",
       rewardInr: 30,
-      briefing: [],
-      challenges: [],
+      briefing: [
+        {
+          time: "12:40 PM",
+          from: "Priya Nair · Head of Fraud Analytics",
+          channel: "email",
+          subject: "Need numbers, not a novel",
+          body: "I have a 4:00 with the CRO. Put the discrepancy into a one-page evidence pack: volumes, suspicious activity, observed fraud rate, missing alerts, and the duplicate-alert noise from the raw file.",
+        },
+        {
+          time: "12:48 PM",
+          from: "Investigation notes",
+          channel: "note",
+          body: "Use the clean warehouse tables for operational metrics. Use transactions_raw / fraud_alerts_raw only for the duplicate-ID count. Then write the cause in plain language.",
+        },
+      ],
+      challenges: [
+        {
+          id: "s4-metrics",
+          stageId: "stage-4",
+          title: "Evidence pack",
+          description: "Submit the five figures the CRO will ask for.",
+          type: "numerical",
+          datasetRef: "challenge_v1",
+          evaluation: "numeric_tolerance",
+        },
+        {
+          id: "s4-explain",
+          stageId: "stage-4",
+          title: "What caused the dashboard discrepancy?",
+          description:
+            "In a short paragraph: what broke, what the numbers prove, and how data quality made the picture worse.",
+          type: "text",
+          datasetRef: "challenge_v1",
+          evaluation: "rubric",
+        },
+      ],
     },
     {
       id: "stage-5",
@@ -139,8 +224,62 @@ export const QUEST_MODULE: ModuleDefinition = {
       title: "Executive Review",
       shortTitle: "Executive Review",
       rewardInr: 30,
-      briefing: [],
-      challenges: [],
+      briefing: [
+        {
+          time: "3:55 PM",
+          from: "Priya Nair · Head of Fraud Analytics",
+          channel: "slack",
+          body: "The Head of Fraud Analytics has five minutes before an executive meeting. I need you to speak for the desk. What went wrong, what evidence we have, and what the bank should do next.",
+        },
+        {
+          time: "3:57 PM",
+          from: "Ops Bot",
+          channel: "system",
+          body: "Mini viva will follow the memo. Answers are scored with a simple rubric — no proctoring, no AI-detection. Be specific.",
+        },
+      ],
+      challenges: [
+        {
+          id: "s5-memo",
+          stageId: "stage-5",
+          title: "Five-minute memo",
+          description:
+            "Cover all three: (1) What went wrong? (2) What evidence supports the conclusion? (3) What should the bank do next?",
+          type: "text",
+          datasetRef: "challenge_v1",
+          evaluation: "rubric",
+        },
+        {
+          id: "s5-viva-1",
+          stageId: "stage-5",
+          title: "Viva · duplicates",
+          description:
+            "You identified duplicate transaction IDs. Why do you believe these explain part of the discrepancy?",
+          type: "text",
+          datasetRef: "challenge_v1",
+          evaluation: "rubric",
+        },
+        {
+          id: "s5-viva-2",
+          stageId: "stage-5",
+          title: "Viva · join logic",
+          description:
+            "You used (or should have used) a LEFT JOIN in Stage 2. Why was that appropriate for finding alerts that never materialised?",
+          type: "text",
+          datasetRef: "challenge_v1",
+          evaluation: "rubric",
+        },
+        {
+          id: "s5-viva-3",
+          stageId: "stage-5",
+          title: "Viva · monitoring",
+          description:
+            "If the fraud-alert pipeline is fixed, what metric would you monitor to ensure the issue doesn't return?",
+          type: "text",
+          datasetRef: "challenge_v1",
+          evaluation: "rubric",
+        },
+      ],
     },
   ],
 };

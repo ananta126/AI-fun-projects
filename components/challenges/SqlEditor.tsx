@@ -30,6 +30,7 @@ WHERE 1 = 0;
 export function SqlEditor({
   onEvaluate,
   disabled,
+  starter,
 }: {
   onEvaluate: (sql: string) => Promise<{
     passed: boolean;
@@ -37,8 +38,9 @@ export function SqlEditor({
     result: QueryResult;
   }>;
   disabled?: boolean;
+  starter?: string;
 }) {
-  const [sql, setSql] = useState(STARTER);
+  const [sql, setSql] = useState(starter ?? STARTER);
   const [busy, setBusy] = useState(false);
   const [runResult, setRunResult] = useState<QueryResult | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);

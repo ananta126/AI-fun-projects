@@ -4,6 +4,7 @@ import {
   getInvestigationStats,
   MONTHS,
 } from "@/lib/challenge-data";
+import { getMessyDataset } from "@/lib/messy-data";
 
 export async function GET() {
   const dataset = getChallengeDataset();
@@ -36,34 +37,57 @@ export async function GET() {
     }
   }
 
+  const messy = getMessyDataset();
+  const txnCols = [
+    "txn_id",
+    "customer_id",
+    "amount_inr",
+    "channel",
+    "category",
+    "txn_ts",
+    "status",
+    "is_international",
+  ];
+  const alertCols = ["alert_id", "txn_id", "alert_ts", "rule_code", "severity", "status"];
+  const custCols = ["customer_id", "full_name", "city", "kyc_status", "risk_segment", "account_opened_on"];
+
   return NextResponse.json({
     tables: [
       {
         name: "customers",
         rows: dataset.customers.length,
-        columns: ["customer_id", "full_name", "city", "kyc_status", "risk_segment", "account_opened_on"],
+        columns: custCols,
         sample: dataset.customers.slice(0, 8),
       },
       {
         name: "transactions",
         rows: dataset.transactions.length,
-        columns: [
-          "txn_id",
-          "customer_id",
-          "amount_inr",
-          "channel",
-          "category",
-          "txn_ts",
-          "status",
-          "is_international",
-        ],
+        columns: txnCols,
         sample: dataset.transactions.slice(0, 8),
       },
       {
         name: "fraud_alerts",
         rows: dataset.fraud_alerts.length,
-        columns: ["alert_id", "txn_id", "alert_ts", "rule_code", "severity", "status"],
+        columns: alertCols,
         sample: dataset.fraud_alerts.slice(0, 8),
+      },
+      {
+        name: "customers_raw",
+        rows: messy.customers.length,
+        columns: custCols,
+        sample: messy.customers.slice(0, 8),
+      },
+      {
+        name: "transactions_raw",
+        rows: messy.transactions.length,
+        columns: txnCols,
+        sample: messy.transactions.filter((t) => t.customer_id === null).slice(0, 4).concat(messy.transactions.slice(80, 84)),
+      },
+      {
+        name: "fraud_alerts_raw",
+        rows: messy.fraud_alerts.length,
+        columns: alertCols,
+        sample: messy.fraud_alerts.slice(-8),
       },
     ],
     monthly: stats.byMonth,

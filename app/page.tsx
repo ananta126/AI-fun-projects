@@ -20,7 +20,7 @@ export default function HomePage() {
         <div className="grid gap-4 sm:grid-cols-3">
           <Stat label="Entry (simulated)" value={formatInr(QUEST_MODULE.priceInr)} />
           <Stat label="Max reward" value={formatInr(QUEST_MODULE.maxRewardInr)} />
-          <Stat label="Stages live" value="1–2 of 5" />
+          <Stat label="Stages live" value="5 of 5" />
         </div>
         <div className="flex flex-wrap gap-3">
           <Link

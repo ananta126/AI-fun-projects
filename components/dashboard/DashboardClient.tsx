@@ -73,7 +73,7 @@ export function DashboardClient() {
                       </div>
                     </div>
                   </div>
-                  {active || (done && stage.order <= 2) ? (
+                  {active || done ? (
                     <Link href={`/investigate/${stage.id}`}>
                       <Button variant="outline">{done ? "Review" : "Open"}</Button>
                     </Link>
@@ -98,11 +98,16 @@ export function DashboardClient() {
                   Pay {formatInr(QUEST_MODULE.priceInr)} and start (simulated)
                 </Button>
               ) : progress.moduleCompleted ? (
-                <Link href="/dashboard">
-                  <Button className="w-full" variant="outline">
-                    Case closed
-                  </Button>
-                </Link>
+                <div className="space-y-3">
+                  <p className="font-mono text-sm text-teal">
+                    Skill score: {progress.skillScore ?? 0}/100
+                  </p>
+                  <Link href="/dashboard">
+                    <Button className="w-full" variant="outline">
+                      Investigation completed
+                    </Button>
+                  </Link>
+                </div>
               ) : (
                 <Link href={`/investigate/${current?.id ?? "stage-1"}`}>
                   <Button className="w-full">Continue investigation</Button>

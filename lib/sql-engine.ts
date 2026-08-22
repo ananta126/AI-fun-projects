@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import { getChallengeDataset } from "@/lib/challenge-data";
+import { getMessyDataset } from "@/lib/messy-data";
 import { assertReadOnlySql, toSqliteDialect } from "@/lib/sql-safety";
 import type { QueryResult } from "@/lib/sql-types";
 
@@ -98,6 +99,74 @@ function seedDb(db: Database) {
   insertMany(
     "INSERT INTO fraud_alerts VALUES (?, ?, ?, ?, ?, ?)",
     data.fraud_alerts.map((a) => [
+      a.alert_id,
+      a.txn_id,
+      a.alert_ts,
+      a.rule_code,
+      a.severity,
+      a.status,
+    ]),
+  );
+
+  const messy = getMessyDataset();
+  db.run(`
+    CREATE TABLE customers_raw (
+      customer_id TEXT,
+      full_name TEXT,
+      city TEXT,
+      kyc_status TEXT,
+      risk_segment TEXT,
+      account_opened_on TEXT
+    );
+    CREATE TABLE transactions_raw (
+      txn_id TEXT,
+      customer_id TEXT,
+      amount_inr INTEGER,
+      channel TEXT,
+      category TEXT,
+      txn_ts TEXT,
+      status TEXT,
+      is_international INTEGER
+    );
+    CREATE TABLE fraud_alerts_raw (
+      alert_id TEXT,
+      txn_id TEXT,
+      alert_ts TEXT,
+      rule_code TEXT,
+      severity TEXT,
+      status TEXT
+    );
+  `);
+
+  insertMany(
+    "INSERT INTO customers_raw VALUES (?, ?, ?, ?, ?, ?)",
+    messy.customers.map((c) => [
+      c.customer_id,
+      c.full_name,
+      c.city,
+      c.kyc_status,
+      c.risk_segment,
+      c.account_opened_on,
+    ]),
+  );
+
+  insertMany(
+    "INSERT INTO transactions_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    messy.transactions.map((t) => [
+      t.txn_id,
+      t.customer_id,
+      t.amount_inr,
+      t.channel,
+      t.category,
+      t.txn_ts,
+      t.status,
+      t.is_international,
+    ]),
+  );
+
+  insertMany(
+    "INSERT INTO fraud_alerts_raw VALUES (?, ?, ?, ?, ?, ?)",
+    messy.fraud_alerts.map((a) => [
       a.alert_id,
       a.txn_id,
       a.alert_ts,

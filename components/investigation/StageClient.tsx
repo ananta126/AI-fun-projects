@@ -1,20 +1,26 @@
 "use client";
 
+import { EvidenceForm, type EvidencePayload } from "@/components/challenges/EvidenceForm";
 import { MultipleChoiceChallenge } from "@/components/challenges/MultipleChoiceChallenge";
 import { DataExplorer } from "@/components/challenges/DataExplorer";
 import { SqlEditor } from "@/components/challenges/SqlEditor";
+import { TextChallenge } from "@/components/challenges/TextChallenge";
+import { InvestigationComplete } from "@/components/investigation/InvestigationComplete";
 import { StageComplete } from "@/components/investigation/StageComplete";
 import { Timeline } from "@/components/investigation/Timeline";
 import { AppShell } from "@/components/layout/AppShell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { QUEST_MODULE } from "@/data/module";
+import { SQL_STARTERS } from "@/data/sql-starters";
 import { evaluateExactAnswer } from "@/lib/evaluate-exact";
 import {
   completeStage,
   recordSubmission,
+  saveNotes,
   startModule,
 } from "@/lib/progress";
+import { MEMO_RUBRIC, scoreExplanation, scoreViva, STAGE4_RUBRIC } from "@/lib/rubric";
 import { useProgress } from "@/lib/use-progress";
 import type { QueryResult } from "@/lib/sql-types";
 import type { UserProgress } from "@/types";
@@ -30,6 +36,7 @@ export function StageClient({ stageId }: { stageId: string }) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showComplete, setShowComplete] = useState(false);
   const [unlockedDisplay, setUnlockedDisplay] = useState<number | null>(null);
+  const [skillDisplay, setSkillDisplay] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
   const locked = useMemo(() => {
@@ -70,24 +77,31 @@ export function StageClient({ stageId }: { stageId: string }) {
     );
   }
 
-  if (stage.order > 2 || stage.challenges.length === 0) {
-    return (
-      <AppShell rewardUnlocked={progress.rewardUnlocked} maxReward={progress.maxReward}>
-        <Badge>Coming next</Badge>
-        <h1 className="mt-3 font-serif text-3xl">{stage.title}</h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-muted">
-          Stages 3–5 are not in this slice. Reset from Lab after you finish Stage 2, or continue
-          once data quality, evidence, and the executive viva ship.
-        </p>
-        <Link href="/dashboard" className="mt-4 inline-block text-sm text-teal">
-          Back to case file
-        </Link>
-      </AppShell>
-    );
-  }
-
   const challenge = stage.challenges[Math.min(qIndex, stage.challenges.length - 1)]!;
   const alreadyDone = progress.completedStageIds.includes(stage.id);
+  const nextStage = QUEST_MODULE.stages.find((s) => s.order === stage.order + 1);
+
+  function advanceOrFinish(next: UserProgress) {
+    if (qIndex + 1 < currentStage.challenges.length) {
+      setQIndex((i) => i + 1);
+      setFeedback(null);
+      return;
+    }
+    finish(next);
+  }
+
+  function finish(current: UserProgress) {
+    if (current.completedStageIds.includes(currentStage.id)) {
+      setUnlockedDisplay(current.rewardUnlocked);
+      setSkillDisplay(current.skillScore);
+      setShowComplete(true);
+      return;
+    }
+    const updated = completeStage(current, currentStage.id);
+    setUnlockedDisplay(updated.rewardUnlocked);
+    setSkillDisplay(updated.skillScore);
+    setShowComplete(true);
+  }
 
   async function onMcq(answer: string) {
     const result = evaluateExactAnswer(answer, String(challenge.expectedAnswer ?? ""));
@@ -101,14 +115,7 @@ export function StageClient({ stageId }: { stageId: string }) {
       feedback: result.feedback,
     });
     if (!result.passed) return;
-    if (qIndex + 1 < currentStage.challenges.length) {
-      setTimeout(() => {
-        setQIndex((i) => i + 1);
-        setFeedback(null);
-      }, 650);
-      return;
-    }
-    finish(next);
+    advanceOrFinish(next);
   }
 
   async function onSql(sql: string): Promise<{
@@ -121,7 +128,7 @@ export function StageClient({ stageId }: { stageId: string }) {
       const res = await fetch("/api/evaluate/sql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
+        body: JSON.stringify({ sql, challengeId: challenge.id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Evaluation failed");
@@ -133,8 +140,8 @@ export function StageClient({ stageId }: { stageId: string }) {
         passed: data.passed,
         feedback: data.feedback,
       });
-      if (data.passed && !alreadyDone) {
-        finish(next);
+      if (data.passed) {
+        advanceOrFinish(next);
       }
       return data;
     } finally {
@@ -142,18 +149,50 @@ export function StageClient({ stageId }: { stageId: string }) {
     }
   }
 
-  function finish(current: UserProgress) {
-    if (current.completedStageIds.includes(currentStage.id)) {
-      setUnlockedDisplay(current.rewardUnlocked);
-      setShowComplete(true);
-      return;
-    }
-    const updated = completeStage(current, currentStage.id);
-    setUnlockedDisplay(updated.rewardUnlocked);
-    setShowComplete(true);
+  async function onEvidence(payload: EvidencePayload) {
+    const res = await fetch("/api/evaluate/evidence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Evaluation failed");
+    const next = recordSubmission(progress, {
+      challengeId: challenge.id,
+      stageId: currentStage.id,
+      type: "numerical",
+      payload,
+      passed: data.passed,
+      feedback: data.feedback,
+    });
+    if (data.passed) advanceOrFinish(next);
+    return data;
   }
 
-  const nextStage = QUEST_MODULE.stages.find((s) => s.order === stage.order + 1);
+  function onText(text: string) {
+    const scored =
+      challenge.id === "s4-explain"
+        ? scoreExplanation(text, STAGE4_RUBRIC)
+        : challenge.id === "s5-memo"
+          ? scoreExplanation(text, MEMO_RUBRIC)
+          : scoreViva(challenge.id, text);
+    setFeedback(scored.feedback);
+    const withNotes = saveNotes(progress, challenge.id, text);
+    const next = recordSubmission(withNotes, {
+      challengeId: challenge.id,
+      stageId: currentStage.id,
+      type: "text",
+      payload: text,
+      passed: scored.passed,
+      feedback: scored.feedback,
+    });
+    if (!scored.passed) return;
+    advanceOrFinish(next);
+  }
+
+  const showExplorer = stage.id === "stage-1" || stage.id === "stage-3" || stage.id === "stage-4";
+  const showSql =
+    challenge.type === "sql" || stage.id === "stage-3" || stage.id === "stage-4";
 
   return (
     <AppShell rewardUnlocked={progress.rewardUnlocked} maxReward={progress.maxReward}>
@@ -172,41 +211,82 @@ export function StageClient({ stageId }: { stageId: string }) {
           <Timeline events={stage.briefing} />
         </div>
         <div className="space-y-4">
-          {stage.id === "stage-1" ? <DataExplorer /> : null}
+          {showExplorer ? <DataExplorer /> : null}
+          <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
+            Finding {qIndex + 1} of {stage.challenges.length}
+          </p>
           {challenge.type === "multiple_choice" ? (
-            <>
-              <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-                Finding {qIndex + 1} of {stage.challenges.length}
-              </p>
-              <MultipleChoiceChallenge
-                key={challenge.id}
-                challenge={challenge}
-                disabled={busy || alreadyDone}
-                onSubmit={onMcq}
-              />
-              {feedback ? <p className="text-sm text-teal">{feedback}</p> : null}
-            </>
+            <MultipleChoiceChallenge
+              key={challenge.id}
+              challenge={challenge}
+              disabled={busy || alreadyDone}
+              onSubmit={onMcq}
+            />
           ) : null}
           {challenge.type === "sql" ? (
-            <SqlEditor disabled={busy || alreadyDone} onEvaluate={onSql} />
+            <SqlEditor
+              key={challenge.id}
+              disabled={busy || alreadyDone}
+              starter={SQL_STARTERS[challenge.id]}
+              onEvaluate={onSql}
+            />
           ) : null}
+          {challenge.type === "numerical" ? (
+            <EvidenceForm key={challenge.id} disabled={busy || alreadyDone} onSubmit={onEvidence} />
+          ) : null}
+          {challenge.type === "text" ? (
+            <TextChallenge
+              key={challenge.id}
+              title={challenge.title}
+              description={challenge.description}
+              disabled={busy || alreadyDone}
+              minChars={challenge.id.startsWith("s5-viva") ? 40 : 80}
+              onSubmit={onText}
+            />
+          ) : null}
+          {challenge.type !== "sql" && showSql ? (
+            <SqlEditor
+              key={`probe-${challenge.id}`}
+              disabled={busy}
+              starter={SQL_STARTERS["s3-sql-dup-txn"]}
+              onEvaluate={async (sql) => {
+                const res = await fetch("/api/sql", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ sql }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Query failed");
+                return { passed: false, feedback: "Probe query only — it is not scored.", result: data };
+              }}
+            />
+          ) : null}
+          {feedback ? <p className="text-sm text-teal">{feedback}</p> : null}
         </div>
       </div>
 
-      {showComplete ? (
+      {showComplete && currentStage.order === 5 ? (
+        <InvestigationComplete
+          skillScore={skillDisplay ?? progress.skillScore ?? 0}
+          reward={unlockedDisplay ?? progress.rewardUnlocked}
+          onContinue={() => {
+            setShowComplete(false);
+            router.push("/dashboard");
+          }}
+        />
+      ) : null}
+
+      {showComplete && currentStage.order !== 5 ? (
         <StageComplete
           stageLabel={stage.title}
           reward={stage.rewardInr}
           total={unlockedDisplay ?? progress.rewardUnlocked}
           max={progress.maxReward}
-          nextLabel={nextStage && nextStage.order <= 2 ? nextStage.title : nextStage ? `${nextStage.title} (next slice)` : undefined}
+          nextLabel={nextStage?.title}
           onContinue={() => {
             setShowComplete(false);
-            if (nextStage && nextStage.order <= 2) {
-              router.push(`/investigate/${nextStage.id}`);
-            } else {
-              router.push("/dashboard");
-            }
+            if (nextStage) router.push(`/investigate/${nextStage.id}`);
+            else router.push("/dashboard");
           }}
         />
       ) : null}
