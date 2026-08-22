@@ -1,33 +1,36 @@
-import { getEvidenceMetrics } from "@/lib/messy-data";
+import { getImpactMetrics } from "@/lib/messy-data";
 
-export type EvidenceInput = {
-  totalTransactions?: number;
-  suspiciousTransactions?: number;
-  fraudRatePct?: number;
-  missingAlerts?: number;
-  duplicateTxnIds?: number;
+export type ImpactPayload = {
+  affectedTxnCount: number;
+  missingAlerts: number;
+  fraudRatePct: number;
+  percentageImpact: number;
+  affectedChannel: string;
 };
 
-export function evaluateEvidence(body: EvidenceInput): { passed: boolean; feedback: string } {
-  const expected = getEvidenceMetrics();
-  const checks = [
-    ["totalTransactions", body.totalTransactions, expected.totalTransactions, 0],
-    ["suspiciousTransactions", body.suspiciousTransactions, expected.suspiciousTransactions, 0],
-    ["fraudRatePct", body.fraudRatePct, expected.fraudRatePct, 0.2],
-    ["missingAlerts", body.missingAlerts, expected.missingAlerts, 0],
-    ["duplicateTxnIds", body.duplicateTxnIds, expected.duplicateTxnIds, 0],
-  ] as const;
-
-  const misses = checks.filter(([, got, want, tol]) => {
-    if (typeof got !== "number" || Number.isNaN(got)) return true;
-    return Math.abs(got - want) > tol;
-  });
-
+export function evaluateImpact(body: ImpactPayload): { passed: boolean; feedback: string } {
+  const expected = getImpactMetrics();
+  const channelOk = (body.affectedChannel || "").trim().toUpperCase() === "UPI";
+  const checks: Array<[string, boolean]> = [
+    ["affected transactions", body.affectedTxnCount === expected.affectedTxnCount],
+    ["missing alerts", body.missingAlerts === expected.missingAlerts],
+    [
+      "fraud rate",
+      typeof body.fraudRatePct === "number" &&
+        Math.abs(body.fraudRatePct - expected.fraudRatePct) <= 0.2,
+    ],
+    [
+      "percentage impact",
+      Math.abs(body.percentageImpact - expected.dashboardDeclinePct) <= 1,
+    ],
+    ["channel", channelOk],
+  ];
+  const misses = checks.filter(([, ok]) => !ok).map(([name]) => name);
   const passed = misses.length === 0;
   return {
     passed,
     feedback: passed
-      ? "Evidence pack accepted. The CRO can work with this."
-      : `Off on ${misses.length} figure${misses.length === 1 ? "" : "s"} (${misses.map(([k]) => k).join(", ")}). Re-query the warehouse and the raw landing tables.`,
+      ? "Impact figures accepted. The concentration is now a business problem, not a curiosity."
+      : `Off on ${misses.join(", ")}. Recompute from source vs warehouse — do not use the dashboard's story.`,
   };
 }

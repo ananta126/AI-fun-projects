@@ -19,7 +19,7 @@ export function MultipleChoiceChallenge({
 
   return (
     <Card className="p-5">
-      <Badge tone="teal">Question</Badge>
+      <Badge tone="teal">Finding</Badge>
       <h3 className="mt-3 font-serif text-2xl text-text">{challenge.title}</h3>
       <p className="mt-2 text-sm leading-6 text-muted">{challenge.description}</p>
       <div className="mt-5 grid gap-2">

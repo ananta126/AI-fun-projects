@@ -3,7 +3,7 @@ import {
   getInvestigationStats,
   MONTHS,
 } from "@/lib/challenge-data";
-import { getMessyDataset } from "@/lib/messy-data";
+import { getMessyDataset, getMissingAlertsByChannel, getPipelineLogs } from "@/lib/messy-data";
 
 export type DatasetOverview = {
   tables: Array<{
@@ -25,6 +25,12 @@ export type DatasetOverview = {
     julyTransactions: number;
     julyAlerts: number;
   }>;
+  alertGap: Array<{
+    channel: string;
+    expectedAlerts: number;
+    warehouseAlerts: number;
+    missing: number;
+  }>;
   months: typeof MONTHS;
 };
 
@@ -32,6 +38,7 @@ export function getDatasetOverview(): DatasetOverview {
   const dataset = getChallengeDataset();
   const stats = getInvestigationStats(dataset);
   const messy = getMessyDataset();
+  const logs = getPipelineLogs();
 
   const channels = new Map<string, number>();
   for (const t of dataset.transactions) {
@@ -73,6 +80,17 @@ export function getDatasetOverview(): DatasetOverview {
   ];
   const alertCols = ["alert_id", "txn_id", "alert_ts", "rule_code", "severity", "status"];
   const custCols = ["customer_id", "full_name", "city", "kyc_status", "risk_segment", "account_opened_on"];
+  const logCols = [
+    "job_id",
+    "job_name",
+    "layer",
+    "status",
+    "rows_read",
+    "rows_written",
+    "started_at",
+    "finished_at",
+    "message",
+  ];
 
   return {
     tables: [
@@ -95,6 +113,12 @@ export function getDatasetOverview(): DatasetOverview {
         sample: dataset.fraud_alerts.slice(0, 8),
       },
       {
+        name: "fraud_alerts_raw",
+        rows: messy.fraud_alerts.length,
+        columns: alertCols,
+        sample: messy.fraud_alerts.slice(-8),
+      },
+      {
         name: "customers_raw",
         rows: messy.customers.length,
         columns: custCols,
@@ -110,10 +134,10 @@ export function getDatasetOverview(): DatasetOverview {
           .concat(messy.transactions.slice(80, 84)),
       },
       {
-        name: "fraud_alerts_raw",
-        rows: messy.fraud_alerts.length,
-        columns: alertCols,
-        sample: messy.fraud_alerts.slice(-8),
+        name: "pipeline_logs",
+        rows: logs.length,
+        columns: logCols,
+        sample: logs,
       },
     ],
     monthly: stats.byMonth,
@@ -123,6 +147,7 @@ export function getDatasetOverview(): DatasetOverview {
     categories: [...categories.entries()]
       .map(([category, row]) => ({ category, ...row }))
       .sort((a, b) => b.transactions - a.transactions),
+    alertGap: getMissingAlertsByChannel(),
     months: MONTHS,
   };
 }

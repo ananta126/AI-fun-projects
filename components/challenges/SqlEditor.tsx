@@ -15,17 +15,11 @@ const Editor = dynamic(() => import("@monaco-editor/react"), {
   ),
 });
 
-const STARTER = `-- Find settled transactions that should have an alert
--- but do not appear in fraud_alerts.
--- Published rules:
---   amount_inr >= 250000
---   OR (channel = 'WIRE' AND amount_inr >= 75000)
---   OR (category = 'CRYPTO' AND amount_inr >= 50000)
---   OR (is_international = 1 AND amount_inr >= 100000)
+const STARTER = `-- Read-only warehouse. SELECT / WITH only.
 
-SELECT t.txn_id
-FROM transactions t
-WHERE 1 = 0;
+SELECT *
+FROM fraud_alerts
+LIMIT 20;
 `;
 
 export function SqlEditor({

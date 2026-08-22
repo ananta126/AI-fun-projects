@@ -1,6 +1,6 @@
 import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import { getChallengeDataset } from "@/lib/challenge-data";
-import { getMessyDataset } from "@/lib/messy-data";
+import { getMessyDataset, getPipelineLogs } from "@/lib/messy-data";
 import { assertReadOnlySql, toSqliteDialect } from "@/lib/sql-safety";
 import type { QueryResult } from "@/lib/sql-types";
 
@@ -142,6 +142,17 @@ function seedDb(db: Database) {
       severity TEXT,
       status TEXT
     );
+    CREATE TABLE pipeline_logs (
+      job_id TEXT,
+      job_name TEXT,
+      layer TEXT,
+      status TEXT,
+      rows_read INTEGER,
+      rows_written INTEGER,
+      started_at TEXT,
+      finished_at TEXT,
+      message TEXT
+    );
   `);
 
   insertMany(
@@ -179,6 +190,21 @@ function seedDb(db: Database) {
       a.rule_code,
       a.severity,
       a.status,
+    ]),
+  );
+
+  insertMany(
+    "INSERT INTO pipeline_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    getPipelineLogs().map((log) => [
+      log.job_id,
+      log.job_name,
+      log.layer,
+      log.status,
+      log.rows_read,
+      log.rows_written,
+      log.started_at,
+      log.finished_at,
+      log.message,
     ]),
   );
 }

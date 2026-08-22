@@ -4,34 +4,49 @@ import { getDatasetOverview, type DatasetOverview } from "@/lib/dataset-overview
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/challenges/DataTable";
-import { useState } from "react";
+import { track } from "@/lib/progress";
+import { useMemo, useState } from "react";
 
-export function DataExplorer() {
+export function DataExplorer({ allowedTables }: { allowedTables: string[] }) {
   const [overview] = useState<DatasetOverview>(() => getDatasetOverview());
-  const [table, setTable] = useState("transactions");
+  const tables = useMemo(
+    () => overview.tables.filter((t) => allowedTables.includes(t.name)),
+    [overview.tables, allowedTables],
+  );
+  const [picked, setPicked] = useState<string | null>(null);
   const [view, setView] = useState<"sample" | "monthly" | "channels" | "categories">("sample");
+  const table = tables.some((t) => t.name === picked) ? picked! : tables[0]?.name;
+  const active = tables.find((t) => t.name === table);
+  if (!active) {
+    return (
+      <Card className="p-5">
+        <p className="text-sm text-muted">No evidence unlocked yet.</p>
+      </Card>
+    );
+  }
 
-  const active = overview.tables.find((t) => t.name === table) ?? overview.tables[0]!;
+  const warehouse = ["customers", "transactions", "fraud_alerts"].includes(active.name);
 
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Badge>Warehouse snapshot</Badge>
-          <h3 className="mt-2 font-serif text-xl">Inspect the books</h3>
+          <Badge>Evidence locker</Badge>
+          <h3 className="mt-2 font-serif text-xl">Warehouse & source extracts</h3>
           <p className="mt-1 text-sm text-muted">
-            Table names, columns, samples, and basic shape. Numbers are real for this case.
+            Access is read-only and expands as the case progresses. Row counts are live for this snapshot.
           </p>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {overview.tables.map((t) => (
+        {tables.map((t) => (
           <button
             key={t.name}
             type="button"
             onClick={() => {
-              setTable(t.name);
+              setPicked(t.name);
               setView("sample");
+              track("evidence_opened", { table: t.name });
             }}
             className={`rounded-md border px-3 py-1.5 font-mono text-xs ${
               table === t.name ? "border-teal bg-teal/10 text-teal" : "border-line text-muted"
@@ -56,21 +71,24 @@ export function DataExplorer() {
             ["channels", "By channel"],
             ["categories", "By category"],
           ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setView(id)}
-            className={`text-xs ${view === id ? "text-teal" : "text-muted hover:text-text"}`}
-          >
-            {label}
-          </button>
-        ))}
+        )
+          .filter(([id]) => {
+            if (id === "sample") return true;
+            return warehouse;
+          })
+          .map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setView(id)}
+              className={`text-xs ${view === id ? "text-teal" : "text-muted hover:text-text"}`}
+            >
+              {label}
+            </button>
+          ))}
       </div>
       <div className="mt-4">
-        {view === "sample" ? (
-          <DataTable columns={active.columns} rows={active.sample} />
-        ) : null}
+        {view === "sample" ? <DataTable columns={active.columns} rows={active.sample} /> : null}
         {view === "monthly" ? (
           <DataTable
             columns={["month", "transactions", "alerts", "alerts_per_1000"]}

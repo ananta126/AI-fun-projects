@@ -20,14 +20,14 @@ export default function HomePage() {
         <div className="grid gap-4 sm:grid-cols-3">
           <Stat label="Entry (simulated)" value={formatInr(QUEST_MODULE.priceInr)} />
           <Stat label="Max reward" value={formatInr(QUEST_MODULE.maxRewardInr)} />
-          <Stat label="Stages live" value="5 of 5" />
+          <Stat label="Investigations" value="01–04 + review" />
         </div>
         <div className="flex flex-wrap gap-3">
           <Link
             href="/dashboard"
             className="rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-bg hover:brightness-110"
           >
-            Open the case file
+            ENTER CASE — ₹200
           </Link>
           <Link
             href="/dev"
@@ -37,8 +37,8 @@ export default function HomePage() {
           </Link>
         </div>
         <p className="max-w-xl text-sm leading-6 text-muted">
-          You are a data analyst at a large bank. The fraud dashboard says suspicious activity fell.
-          Volumes did not. The investigation unfolds one stage at a time.
+          You are a data analyst at a large bank. The fraud dashboard is celebrating. The warehouse is not.
+          Follow the evidence. Do not start with the dashboard.
         </p>
       </div>
     </div>
