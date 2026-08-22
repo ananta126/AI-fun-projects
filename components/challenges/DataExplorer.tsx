@@ -1,54 +1,15 @@
 "use client";
 
+import { getDatasetOverview, type DatasetOverview } from "@/lib/dataset-overview";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/challenges/DataTable";
-import { useEffect, useState } from "react";
-
-export type DatasetOverview = {
-  tables: Array<{
-    name: string;
-    rows: number;
-    columns: string[];
-    sample: Array<Record<string, unknown>>;
-  }>;
-  monthly: Array<{
-    month: string;
-    transactions: number;
-    alerts: number;
-    alertsPerThousand: number;
-  }>;
-  channels: Array<{ channel: string; transactions: number }>;
-  categories: Array<{
-    category: string;
-    transactions: number;
-    julyTransactions: number;
-    julyAlerts: number;
-  }>;
-};
+import { useState } from "react";
 
 export function DataExplorer() {
-  const [overview, setOverview] = useState<DatasetOverview | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [overview] = useState<DatasetOverview>(() => getDatasetOverview());
   const [table, setTable] = useState("transactions");
   const [view, setView] = useState<"sample" | "monthly" | "channels" | "categories">("sample");
-
-  useEffect(() => {
-    fetch("/api/dataset/overview")
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to load warehouse snapshot.");
-        return res.json() as Promise<DatasetOverview>;
-      })
-      .then(setOverview)
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
-  if (error) {
-    return <Card className="p-4 text-sm text-danger">{error}</Card>;
-  }
-  if (!overview) {
-    return <Card className="p-4 text-sm text-muted">Loading warehouse snapshot…</Card>;
-  }
 
   const active = overview.tables.find((t) => t.name === table) ?? overview.tables[0]!;
 

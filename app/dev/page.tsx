@@ -12,6 +12,7 @@ import {
 } from "@/lib/progress";
 import { useAnalyticsEvents, useProgress } from "@/lib/use-progress";
 import { formatInr } from "@/lib/utils";
+import { resetChallengeDbCache } from "@/lib/sql-engine";
 import { useState } from "react";
 
 export default function DevPage() {
@@ -36,10 +37,9 @@ export default function DevPage() {
         </Button>
         <Button
           variant="outline"
-          onClick={async () => {
-            const res = await fetch("/api/admin/reseed", { method: "POST" });
-            const data = await res.json();
-            setSeedMsg(data.message ?? "Reseeded");
+          onClick={() => {
+            resetChallengeDbCache();
+            setSeedMsg("Challenge database will rebuild on the next SQL run.");
           }}
         >
           Reseed challenge data

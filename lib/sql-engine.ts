@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import { getChallengeDataset } from "@/lib/challenge-data";
 import { getMessyDataset } from "@/lib/messy-data";
@@ -12,9 +10,17 @@ const QUERY_TIMEOUT_MS = 2500;
 let dbPromise: Promise<Database> | null = null;
 
 async function loadSqlJs() {
-  const wasmPath = path.join(process.cwd(), "node_modules/sql.js/dist/sql-wasm.wasm");
-  const wasmBinary = new Uint8Array(fs.readFileSync(wasmPath)).buffer;
-  return initSqlJs({ wasmBinary });
+  if (typeof window === "undefined") {
+    const fs = await import("fs");
+    const path = await import("path");
+    const wasmPath = path.join(process.cwd(), "node_modules/sql.js/dist/sql-wasm.wasm");
+    const wasmBinary = new Uint8Array(fs.readFileSync(wasmPath)).buffer;
+    return initSqlJs({ wasmBinary });
+  }
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return initSqlJs({
+    locateFile: (file) => `${base}/${file}`,
+  });
 }
 
 export async function getChallengeDb(): Promise<Database> {

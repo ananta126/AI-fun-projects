@@ -6,7 +6,7 @@ export function DataTable({
   empty = "No rows.",
 }: {
   columns: string[];
-  rows: Array<Record<string, unknown>>;
+  rows: Array<Record<string, unknown> | object>;
   empty?: string;
 }) {
   if (!columns.length) {
@@ -29,7 +29,7 @@ export function DataTable({
             <tr key={i} className="border-t border-line/80 odd:bg-white/[0.02]">
               {columns.map((col) => (
                 <td key={col} className="whitespace-nowrap px-3 py-2 font-mono text-text/90">
-                  {formatCell(row[col])}
+                  {formatCell((row as Record<string, unknown>)[col])}
                 </td>
               ))}
             </tr>

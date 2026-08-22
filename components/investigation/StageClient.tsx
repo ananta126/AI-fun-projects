@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/Button";
 import { QUEST_MODULE } from "@/data/module";
 import { SQL_STARTERS } from "@/data/sql-starters";
 import { evaluateExactAnswer } from "@/lib/evaluate-exact";
+import { evaluateSqlChallenge } from "@/lib/evaluation";
+import { evaluateEvidence } from "@/lib/evaluate-evidence";
+import { runChallengeQuery } from "@/lib/sql-engine";
 import {
   completeStage,
   recordSubmission,
@@ -125,13 +128,7 @@ export function StageClient({ stageId }: { stageId: string }) {
   }> {
     setBusy(true);
     try {
-      const res = await fetch("/api/evaluate/sql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql, challengeId: challenge.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Evaluation failed");
+      const data = await evaluateSqlChallenge(challenge.id, sql);
       const next = recordSubmission(progress, {
         challengeId: challenge.id,
         stageId: currentStage.id,
@@ -150,13 +147,7 @@ export function StageClient({ stageId }: { stageId: string }) {
   }
 
   async function onEvidence(payload: EvidencePayload) {
-    const res = await fetch("/api/evaluate/evidence", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Evaluation failed");
+    const data = evaluateEvidence(payload);
     const next = recordSubmission(progress, {
       challengeId: challenge.id,
       stageId: currentStage.id,
@@ -250,13 +241,7 @@ export function StageClient({ stageId }: { stageId: string }) {
               disabled={busy}
               starter={SQL_STARTERS["s3-sql-dup-txn"]}
               onEvaluate={async (sql) => {
-                const res = await fetch("/api/sql", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ sql }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Query failed");
+                const data = await runChallengeQuery(sql);
                 return { passed: false, feedback: "Probe query only — it is not scored.", result: data };
               }}
             />

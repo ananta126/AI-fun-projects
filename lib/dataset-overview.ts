@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import {
   getChallengeDataset,
   getInvestigationStats,
@@ -6,9 +5,33 @@ import {
 } from "@/lib/challenge-data";
 import { getMessyDataset } from "@/lib/messy-data";
 
-export async function GET() {
+export type DatasetOverview = {
+  tables: Array<{
+    name: string;
+    rows: number;
+    columns: string[];
+    sample: Array<Record<string, unknown> | object>;
+  }>;
+  monthly: Array<{
+    month: string;
+    transactions: number;
+    alerts: number;
+    alertsPerThousand: number;
+  }>;
+  channels: Array<{ channel: string; transactions: number }>;
+  categories: Array<{
+    category: string;
+    transactions: number;
+    julyTransactions: number;
+    julyAlerts: number;
+  }>;
+  months: typeof MONTHS;
+};
+
+export function getDatasetOverview(): DatasetOverview {
   const dataset = getChallengeDataset();
   const stats = getInvestigationStats(dataset);
+  const messy = getMessyDataset();
 
   const channels = new Map<string, number>();
   for (const t of dataset.transactions) {
@@ -29,15 +52,15 @@ export async function GET() {
     if (t.txn_ts.startsWith("2026-07")) row.julyTransactions += 1;
     categories.set(t.category, row);
   }
+  const txnById = new Map(dataset.transactions.map((t) => [t.txn_id, t]));
   for (const alert of dataset.fraud_alerts) {
-    const txn = dataset.transactions.find((t) => t.txn_id === alert.txn_id);
+    const txn = txnById.get(alert.txn_id);
     if (txn?.txn_ts.startsWith("2026-07")) {
       const row = categories.get(txn.category);
       if (row) row.julyAlerts += 1;
     }
   }
 
-  const messy = getMessyDataset();
   const txnCols = [
     "txn_id",
     "customer_id",
@@ -51,7 +74,7 @@ export async function GET() {
   const alertCols = ["alert_id", "txn_id", "alert_ts", "rule_code", "severity", "status"];
   const custCols = ["customer_id", "full_name", "city", "kyc_status", "risk_segment", "account_opened_on"];
 
-  return NextResponse.json({
+  return {
     tables: [
       {
         name: "customers",
@@ -81,7 +104,10 @@ export async function GET() {
         name: "transactions_raw",
         rows: messy.transactions.length,
         columns: txnCols,
-        sample: messy.transactions.filter((t) => t.customer_id === null).slice(0, 4).concat(messy.transactions.slice(80, 84)),
+        sample: messy.transactions
+          .filter((t) => t.customer_id === null)
+          .slice(0, 4)
+          .concat(messy.transactions.slice(80, 84)),
       },
       {
         name: "fraud_alerts_raw",
@@ -98,5 +124,5 @@ export async function GET() {
       .map(([category, row]) => ({ category, ...row }))
       .sort((a, b) => b.transactions - a.transactions),
     months: MONTHS,
-  });
+  };
 }

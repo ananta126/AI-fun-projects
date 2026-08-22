@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/challenges/DataTable";
 import type { QueryResult } from "@/lib/sql-types";
+import { runChallengeQuery } from "@/lib/sql-engine";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
@@ -53,14 +54,8 @@ export function SqlEditor({
     setFeedback(null);
     setPassed(null);
     try {
-      const res = await fetch("/api/sql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Query failed");
-      setRunResult(data as QueryResult);
+      const data = await runChallengeQuery(sql);
+      setRunResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");
       setRunResult(null);
