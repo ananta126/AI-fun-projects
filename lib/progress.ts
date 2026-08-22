@@ -7,50 +7,80 @@ export const SIMULATED_USER_ID = "sim-analyst-001";
 const STORAGE_KEY = "questbank.progress.v1";
 const EVENTS_KEY = "questbank.analytics.v1";
 
+export const EMPTY_PROGRESS: UserProgress = {
+  userId: SIMULATED_USER_ID,
+  moduleId: QUEST_MODULE.id,
+  paidAmount: 0,
+  rewardUnlocked: 0,
+  maxReward: QUEST_MODULE.maxRewardInr,
+  currentStageOrder: 0,
+  completedStageIds: [],
+  completedChallengeIds: [],
+  rewardHistory: [],
+  submissions: [],
+  notes: {},
+  skillScore: null,
+  moduleCompleted: false,
+  startedAt: null,
+  completedAt: null,
+};
+
+const EMPTY_EVENTS: AnalyticsEvent[] = [];
+
+let cachedProgressRaw: string | null | undefined;
+let cachedProgress: UserProgress = EMPTY_PROGRESS;
+let cachedEventsRaw: string | null | undefined;
+let cachedEvents: AnalyticsEvent[] = EMPTY_EVENTS;
+
 export function emptyProgress(): UserProgress {
-  return {
-    userId: SIMULATED_USER_ID,
-    moduleId: QUEST_MODULE.id,
-    paidAmount: 0,
-    rewardUnlocked: 0,
-    maxReward: QUEST_MODULE.maxRewardInr,
-    currentStageOrder: 0,
-    completedStageIds: [],
-    completedChallengeIds: [],
-    rewardHistory: [],
-    submissions: [],
-    notes: {},
-    skillScore: null,
-    moduleCompleted: false,
-    startedAt: null,
-    completedAt: null,
-  };
+  return { ...EMPTY_PROGRESS, notes: {}, completedStageIds: [], completedChallengeIds: [], rewardHistory: [], submissions: [] };
 }
 
 export function loadProgress(): UserProgress {
-  if (typeof window === "undefined") return emptyProgress();
+  if (typeof window === "undefined") return EMPTY_PROGRESS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyProgress();
+    if (raw === cachedProgressRaw) return cachedProgress;
+    cachedProgressRaw = raw;
+    if (!raw) {
+      cachedProgress = EMPTY_PROGRESS;
+      return cachedProgress;
+    }
     const parsed = JSON.parse(raw) as UserProgress;
-    return { ...emptyProgress(), ...parsed, notes: parsed.notes ?? {} };
+    cachedProgress = {
+      ...EMPTY_PROGRESS,
+      ...parsed,
+      notes: parsed.notes ?? {},
+    };
+    return cachedProgress;
   } catch {
-    return emptyProgress();
+    cachedProgress = EMPTY_PROGRESS;
+    cachedProgressRaw = null;
+    return cachedProgress;
   }
 }
 
 export function saveProgress(progress: UserProgress) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  const raw = JSON.stringify(progress);
+  cachedProgressRaw = raw;
+  cachedProgress = progress;
+  window.localStorage.setItem(STORAGE_KEY, raw);
   window.dispatchEvent(new Event("questbank-progress"));
 }
 
 export function loadEvents(): AnalyticsEvent[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined") return EMPTY_EVENTS;
   try {
-    return JSON.parse(window.localStorage.getItem(EVENTS_KEY) || "[]") as AnalyticsEvent[];
+    const raw = window.localStorage.getItem(EVENTS_KEY) || "[]";
+    if (raw === cachedEventsRaw) return cachedEvents;
+    cachedEventsRaw = raw;
+    cachedEvents = JSON.parse(raw) as AnalyticsEvent[];
+    return cachedEvents;
   } catch {
-    return [];
+    cachedEvents = EMPTY_EVENTS;
+    cachedEventsRaw = "[]";
+    return cachedEvents;
   }
 }
 
@@ -59,9 +89,10 @@ export function track(
   properties?: AnalyticsEvent["properties"],
 ) {
   if (typeof window === "undefined") return;
-  const events = loadEvents();
-  events.push({ name, at: nowIso(), properties });
+  const events = [...loadEvents(), { name, at: nowIso(), properties }];
   window.localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+  cachedEventsRaw = JSON.stringify(events);
+  cachedEvents = events;
   window.dispatchEvent(new Event("questbank-progress"));
 }
 
@@ -153,6 +184,8 @@ export function resetProgress(): UserProgress {
   saveProgress(next);
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(EVENTS_KEY);
+    cachedEventsRaw = "[]";
+    cachedEvents = EMPTY_EVENTS;
     window.dispatchEvent(new Event("questbank-progress"));
   }
   return next;

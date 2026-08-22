@@ -1,12 +1,14 @@
 "use client";
 
-import { emptyProgress, loadEvents, loadProgress, subscribeProgress } from "@/lib/progress";
+import { EMPTY_PROGRESS, loadEvents, loadProgress, subscribeProgress } from "@/lib/progress";
 import { useSyncExternalStore } from "react";
 
+const EMPTY_EVENTS: never[] = [];
+
 export function useProgress() {
-  return useSyncExternalStore(subscribeProgress, loadProgress, emptyProgress);
+  return useSyncExternalStore(subscribeProgress, loadProgress, () => EMPTY_PROGRESS);
 }
 
 export function useAnalyticsEvents() {
-  return useSyncExternalStore(subscribeProgress, loadEvents, () => []);
+  return useSyncExternalStore(subscribeProgress, loadEvents, () => EMPTY_EVENTS);
 }
