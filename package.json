@@ -9,7 +9,10 @@
     "postinstall": "node scripts/copy-wasm.mjs",
     "start": "next start --hostname 0.0.0.0 --port 3000",
     "lint": "eslint",
-    "verify:data": "npx --yes tsx scripts/verify-dataset.ts"
+    "verify:data": "npx tsx scripts/verify-dataset.ts",
+    "verify:sql": "npx tsx scripts/verify-sql.ts",
+    "verify:rest": "npx tsx scripts/verify-rest.ts",
+    "verify": "npm run verify:data && npm run verify:sql && npm run verify:rest"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

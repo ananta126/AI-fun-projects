@@ -1,18 +1,20 @@
-import { evaluateMissingAlertsSql } from "../lib/evaluation";
+import { evaluateSqlChallenge } from "../lib/evaluation";
 import { assertReadOnlySql } from "../lib/sql-safety";
 
-const good = `
-SELECT t.txn_id
-FROM transactions t
-LEFT JOIN fraud_alerts f ON f.txn_id = t.txn_id
-WHERE t.status = 'SETTLED'
-  AND (
-    t.amount_inr >= 250000
-    OR (t.channel = 'WIRE' AND t.amount_inr >= 75000)
-    OR (t.category = 'CRYPTO' AND t.amount_inr >= 50000)
-    OR (t.is_international = 1 AND t.amount_inr >= 100000)
-  )
-  AND f.txn_id IS NULL
+const missingSource = `
+SELECT r.alert_id
+FROM fraud_alerts_raw r
+LEFT JOIN fraud_alerts w ON w.alert_id = r.alert_id
+WHERE w.alert_id IS NULL
+`;
+
+const byChannel = `
+SELECT t.channel, COUNT(*) AS missing
+FROM fraud_alerts_raw r
+LEFT JOIN fraud_alerts w ON w.alert_id = r.alert_id
+JOIN transactions t ON t.txn_id = r.txn_id
+WHERE w.alert_id IS NULL
+GROUP BY t.channel
 `;
 
 async function main() {
@@ -25,11 +27,22 @@ async function main() {
     }
   }
 
-  const result = await evaluateMissingAlertsSql(good);
-  console.log(result.feedback, result.passed, result.matched, result.expected);
-  if (!result.passed) {
-    throw new Error("Expected the reference SQL to pass");
-  }
+  const missing = await evaluateSqlChallenge("s2-sql-1", missingSource);
+  console.log(missing.feedback, missing.passed, missing.matched, missing.expected);
+  if (!missing.passed) throw new Error("Expected the source-vs-warehouse anti-join to pass");
+
+  const exceptSql = await evaluateSqlChallenge(
+    "s2-sql-1",
+    `SELECT alert_id FROM fraud_alerts_raw
+     EXCEPT
+     SELECT alert_id FROM fraud_alerts`,
+  );
+  if (!exceptSql.passed) throw new Error("EXCEPT equivalent should pass");
+
+  const channel = await evaluateSqlChallenge("s4-sql-channel", byChannel);
+  console.log(channel.feedback, channel.passed);
+  if (!channel.passed) throw new Error("Expected channel concentration SQL to pass");
+
   console.log("sql evaluation passed");
 }
 

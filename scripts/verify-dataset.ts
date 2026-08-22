@@ -4,6 +4,7 @@ import {
   getMissingAlertTransactions,
   shouldGenerateAlert,
 } from "../lib/challenge-data";
+import { getImpactMetrics, getMissingSourceAlerts, getQualityIssues } from "../lib/messy-data";
 
 const data = generateChallengeDataset(1262026);
 const stats = getInvestigationStats(data);
@@ -35,14 +36,29 @@ const julyCryptoAlerts = data.fraud_alerts.filter((a) => {
 }).length;
 console.log("july crypto should-alert", julyCryptoTx, "alerts", julyCryptoAlerts);
 
+const missingSource = getMissingSourceAlerts();
+const issues = getQualityIssues();
+const impact = getImpactMetrics();
+console.log("missing source alerts", missingSource.length, issues.missingSourceAlertIds);
+console.log("impact", impact);
+if (missingSource.length !== 14) {
+  throw new Error(`Expected 14 source-only alerts, got ${missingSource.length}`);
+}
+if (impact.affectedChannel !== "UPI") {
+  throw new Error("Missing alerts must concentrate in UPI");
+}
+
 if (lowest?.month !== "July 2026") {
   throw new Error(`Expected July 2026 as largest discrepancy, got ${lowest?.month}`);
 }
+if (impact.dashboardDeclinePct < 20 || impact.dashboardDeclinePct > 35) {
+  throw new Error(`Expected ~26% dashboard decline, got ${impact.dashboardDeclinePct}%`);
+}
+if (julyCryptoAlerts === 0) {
+  throw new Error("July CRYPTO should not be fully missing after the leak was softened");
+}
 if (topChannel?.[0] !== "UPI") {
   throw new Error(`Expected UPI as top suspicious channel, got ${topChannel?.[0]}`);
-}
-if (julyCryptoAlerts !== 0) {
-  throw new Error("Expected zero July CRYPTO alerts");
 }
 if (data.customers.length !== 500 || data.transactions.length !== 5000) {
   throw new Error("Unexpected table sizes");
