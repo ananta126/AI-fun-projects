@@ -110,18 +110,35 @@ Never exceeds ₹150. Reward history is stored separately from stage completion.
 
 ## 10. How to run locally
 
+QuestBank is a Next.js **server** app (SQL APIs). It will not load on the GitHub Pages LOOKBOOK URL.
+
+From this repo, on the QuestBank branch:
+
 ```bash
+git checkout cursor/questbank-mvp-stage1-2-f5c0
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) → **Open the case file** → simulate ₹200.
+Wait until the terminal prints `Ready` / `Local: http://localhost:3000`, then open:
 
-Lab: [http://localhost:3000/dev](http://localhost:3000/dev)
+- [http://localhost:3000](http://localhost:3000) or [http://127.0.0.1:3000](http://127.0.0.1:3000)
+- Lab: [http://localhost:3000/dev](http://localhost:3000/dev)
+
+### If the browser says it cannot connect to the server
+
+That means nothing is listening on port 3000 (or you opened the wrong URL).
+
+1. Do **not** use `https://ananta126.github.io/AI-fun-projects/` — that is still LOOKBOOK.
+2. Do **not** open the GitHub pull request “Files changed” view as the game.
+3. In a terminal **in this project folder**, run `npm run dev` and leave it running.
+4. If `localhost` fails, try `http://127.0.0.1:3000`.
+5. If port 3000 is taken, stop the other app or run `npx next dev --hostname 0.0.0.0 --port 3001` and open that port.
+6. `npm start` only works **after** `npm run build`. For testing, use `npm run dev`.
 
 ## 11. How to deploy
 
-Deploy as a **Node** Next.js app (Vercel or similar). API routes + WASM SQL mean this is not a static GitHub Pages export.
+Deploy as a **Node** Next.js app (Vercel or similar). API routes + WASM SQL mean this is **not** a static GitHub Pages export. Merging the PR will not update `github.io` until you host it on a Node platform.
 
 Set Supabase env vars only after you wire persistence.
 
