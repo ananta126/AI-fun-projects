@@ -6,10 +6,12 @@ import { Card } from "@/components/ui/Card";
 import { QUEST_MODULE } from "@/data/module";
 import {
   forceCompleteStage,
+  jumpToInvestigation,
   resetProgress,
   startModule,
   uncompleteFromStage,
 } from "@/lib/progress";
+import { investigationLabel } from "@/lib/story";
 import { useAnalyticsEvents, useProgress } from "@/lib/use-progress";
 import { formatInr } from "@/lib/utils";
 import { resetChallengeDbCache } from "@/lib/sql-engine";
@@ -21,19 +23,28 @@ export default function DevPage() {
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   return (
-    <AppShell rewardUnlocked={progress.rewardUnlocked} maxReward={QUEST_MODULE.maxRewardInr}>
+    <AppShell
+      rewardUnlocked={progress.rewardUnlocked}
+      maxReward={QUEST_MODULE.maxRewardInr}
+      paidAmount={progress.paidAmount}
+    >
       <h1 className="font-serif text-3xl">Lab</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">
-        MVP testing only. Reset the simulated analyst, jump stages, inspect submissions, and reseed
-        the in-memory challenge database.
+        Development only. Reset the simulated analyst, jump investigations, inspect submissions and
+        reward events, and reseed the challenge database.
       </p>
+
+      <Card className="mt-5 p-4">
+        <div className="text-[11px] uppercase tracking-widest text-muted">Current story state</div>
+        <p className="mt-2 font-mono text-sm text-teal">{progress.storyState}</p>
+      </Card>
 
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="gold" onClick={() => startModule(progress)}>
           Simulate ₹200 start
         </Button>
         <Button variant="danger" onClick={() => resetProgress()}>
-          Reset progress
+          Reset case / user
         </Button>
         <Button
           variant="outline"
@@ -54,13 +65,17 @@ export default function DevPage() {
             <Card key={stage.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div>
                 <div className="text-sm">
-                  Stage {stage.order} — {stage.title}
+                  {investigationLabel(stage.id)} — {stage.title}
                 </div>
                 <div className="font-mono text-[11px] uppercase tracking-widest text-muted">
-                  {done ? "completed" : "open/locked"} · {formatInr(stage.rewardInr)}
+                  {done ? "completed" : progress.begunStageIds.includes(stage.id) ? "open" : "sealed"} ·{" "}
+                  {formatInr(stage.rewardInr)}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => jumpToInvestigation(progress, stage.id)}>
+                  Jump here
+                </Button>
                 <Button variant="outline" onClick={() => forceCompleteStage(progress, stage.id)}>
                   Complete through here
                 </Button>
@@ -74,11 +89,14 @@ export default function DevPage() {
       </div>
 
       <Card className="mt-6 p-4">
-        <div className="text-[11px] uppercase tracking-widest text-muted">Reward state</div>
+        <div className="text-[11px] uppercase tracking-widest text-muted">Reward history</div>
         <p className="mt-2 font-mono text-sm text-gold">
           {formatInr(progress.rewardUnlocked)} / {formatInr(progress.maxReward)} · paid{" "}
           {formatInr(progress.paidAmount)} · skill {progress.skillScore ?? "—"}/100
         </p>
+        <pre className="mt-3 overflow-auto font-mono text-xs text-muted">
+          {JSON.stringify(progress.rewardHistory, null, 2)}
+        </pre>
       </Card>
 
       <Card className="mt-6 overflow-auto p-4">
@@ -86,14 +104,7 @@ export default function DevPage() {
           Submissions ({progress.submissions.length})
         </div>
         <pre className="font-mono text-xs leading-5 text-muted">
-          {JSON.stringify(
-            {
-              progress,
-              events,
-            },
-            null,
-            2,
-          )}
+          {JSON.stringify({ storyState: progress.storyState, progress, events }, null, 2)}
         </pre>
       </Card>
     </AppShell>

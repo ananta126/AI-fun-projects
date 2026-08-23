@@ -2,82 +2,81 @@
 
 Seed: `1262026` in `lib/challenge-data.ts`.
 
-## Published fraud rules (also shown in Stage 2)
+This file is for builders only. The product UI must never link here.
 
-A **settled** transaction should raise an alert if any of:
+## Warehouse vs source
 
-- `amount_inr >= 250000`
-- `channel = 'WIRE' AND amount_inr >= 75000`
-- `category = 'CRYPTO' AND amount_inr >= 50000`
-- `is_international = 1 AND amount_inr >= 100000`
+| Table | Approx. size | Notes |
+| --- | ---: | --- |
+| customers | 500 | Clean |
+| transactions | 5,000 | Clean |
+| fraud_alerts | ~681 | July CRYPTO leak (~26% alert drop vs June) |
+| customers_raw | 500 | Same as warehouse |
+| transactions_raw | 5,012 | +12 duplicate `txn_id` rows; 20 NULL `customer_id`; 15 `C99999` |
+| fraud_alerts_raw | warehouse + 14 | **14 UPI-only extras** (`ALM000001`–`ALM000014`) |
+| pipeline_logs | 3 jobs | All `SUCCESS`. `rows_read` vs `rows_written` silently disagree |
 
-## The leak
+## Investigation 01 — July divergence
 
-In **July 2026** the pipeline dropped alerts for:
+Monthly warehouse shape (settled txns vs alerts) makes **July 2026** the first meaningful break: volume holds, alert count drops.
 
-- all CRYPTO transactions that should have alerted
-- WIRE transactions under ₹2,50,000 that still met the WIRE ₹75k rule
+The dashboard's "fraud is down ~26%" is `(June alerts − July alerts) / June alerts`.
 
-Other months drop ~3% of expected alerts at random (noise).
+Do not highlight July in the UI.
 
-July settled volume stays comparable to June (766 vs 683) while alerts collapse (27 vs 105).
+Expected answers:
 
-## Stage 1 answers
+1. July 2026
+2. July alert count dropped while transaction volume stayed roughly comparable
 
-1. **July 2026** — lowest alerts per 1,000 settled transactions.
-2. **UPI** — highest count of rule-matching (suspicious) transactions (212). July CRYPTO often rides UPI.
-3. **CRYPTO** — July activity is present; July CRYPTO alerts are 0 because of the leak.
+## Investigation 02 — fourteen missing alerts
 
-## Stage 2 expected result
+The 14 `ALM*` rows exist in `fraud_alerts_raw` and not in `fraud_alerts`.
 
-All settled transactions matching the rules with **no** `fraud_alerts.txn_id`. Count: **147**.
+They are cloned from **July UPI** warehouse alerts (new `alert_id`, same `txn_id`). All fourteen are UPI. That fact is **not** given to the learner in I02.
+
+Reference SQL (any equivalent anti-join is valid):
 
 ```sql
-SELECT t.txn_id
-FROM transactions t
-LEFT JOIN fraud_alerts f ON f.txn_id = t.txn_id
-WHERE t.status = 'SETTLED'
-  AND (
-    t.amount_inr >= 250000
-    OR (t.channel = 'WIRE' AND t.amount_inr >= 75000)
-    OR (t.category = 'CRYPTO' AND t.amount_inr >= 50000)
-    OR (t.is_international = 1 AND t.amount_inr >= 100000)
-  )
-  AND f.txn_id IS NULL;
+SELECT r.alert_id
+FROM fraud_alerts_raw r
+LEFT JOIN fraud_alerts w ON w.alert_id = r.alert_id
+WHERE w.alert_id IS NULL;
 ```
 
-## Stage 3 planted defects (`*_raw`)
+Expected: the 14 `ALM*` ids.
 
-- **12** duplicate `txn_id` values (extra clone rows in `transactions_raw`)
-- **20** NULL `customer_id`
-- **15** ghost `customer_id = C99999` (not in `customers_raw`) → **35** invalid-customer txns
-- **14** cloned fraud alerts (`ALD000001`…) on distinct txn_ids → **14** customers
-- **9** alerts with `alert_ts` forced to 2025-12-01 (before the July 2026 book)
+## Investigation 03 — pipeline "clean"
 
-Raw row counts: transactions_raw 5012, fraud_alerts_raw 644.
+Planted defects in raw only:
 
-## Stage 4 gold numbers (clean warehouse unless noted)
+- **12** duplicate `txn_id` values
+- **35** invalid-customer txns (20 NULL + 15 ghost `C99999`)
+- Extra source alerts share `txn_id` with an existing warehouse alert → customers with more than one raw alert row for the same transaction
+- **9** warehouse-copied alerts with `alert_ts = 2025-12-01`
 
-| Field | Value |
-| --- | --- |
-| Total transactions | 5000 |
-| Suspicious (rule-matching) | 777 |
-| Settled | 4680 |
-| `fraud_alerts` rows | 630 |
-| Fraud rate % | 13.5  (= 100 × 630 / 4680, 1 decimal) |
-| Missing fraud alerts | 147 |
-| Duplicate txn_id values in raw | 12 |
+Arjun's logs show SUCCESS. `july_close_fraud_alerts` reads 644 and writes 630.
 
-Root cause to write: July pipeline leak (CRYPTO + mid-value WIRE), plus raw-file duplicates/nulls that would distort any naïve dashboard.
+## Investigation 04 — concentration
 
-## Stage 5 rubric
+Missing source-only alerts by channel: **UPI = 14, every other channel = 0**.
 
-Memo must mention the leak/dashboard miss, evidence (July/CRYPTO/WIRE/duplicates), and a next step (fix pipeline, monitor alert rate / reconciliation).
+Do not put "UPI" in the mission copy.
 
-Viva keywords: duplicates vs counts; LEFT JOIN for unmatched alerts; monitor alert rate / coverage / freshness.
+Impact gold (from `getImpactMetrics()`):
 
-## Reward math
+- missing alerts = 14
+- affected transaction count = unique `txn_id` of those 14
+- fraud rate % = `100 * warehouse_alerts / settled` (1 decimal)
+- dashboard decline % = rounded June→July alert drop
+- affected channel = UPI
 
-25 + 35 + 30 + 30 + 30 = 150.
+## Final review
 
-Skill score /100 is the sum of per-challenge weights in `lib/skill-score.ts`.
+Root cause the learner should argue:
+
+The dashboard did not show a decline in fraud. It showed a decline in what the pipeline could see. Fourteen source UPI alerts never landed in the warehouse; July warehouse alert volume also diverged from transaction volume. Duplicates and invalid customer IDs mean a "successful" load is not a correct load.
+
+## Rewards
+
+25 + 35 + 30 + 30 + 30 = 150. Entry simulated at 200. Reward events are append-only (`rewardHistory`).

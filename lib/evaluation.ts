@@ -1,5 +1,4 @@
-import { getMissingAlertTransactions, getChallengeDataset } from "@/lib/challenge-data";
-import { getQualityIssues } from "@/lib/messy-data";
+import { getMissingSourceAlerts, getQualityIssues } from "@/lib/messy-data";
 import { runChallengeQuery } from "@/lib/sql-engine";
 import type { QueryResult } from "@/lib/sql-types";
 
@@ -13,6 +12,12 @@ export type SqlEvalResult = {
 
 function asStringSet(values: unknown[]): Set<string> {
   return new Set(values.map((v) => String(v)).filter((v) => v && v !== "null" && v !== "undefined"));
+}
+
+function num(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) return Number(value);
+  return null;
 }
 
 async function evaluateIdSet(
@@ -42,60 +47,91 @@ async function evaluateIdSet(
   const missing = [...expected].filter((id) => !got.has(id)).length;
   const recall = expected.size ? matched / expected.size : 0;
   const precision = got.size ? matched / got.size : 0;
-  const hidden = expectedIds.slice(0, 5);
-  const hiddenHits = hidden.filter((id) => got.has(id)).length;
   const passed =
     recall >= 0.95 &&
-    precision >= 0.95 &&
-    extra <= Math.max(2, Math.floor(expected.size * 0.05)) &&
-    missing <= Math.max(2, Math.floor(expected.size * 0.05)) &&
-    hiddenHits >= Math.min(3, hidden.length);
+    precision >= 0.9 &&
+    extra <= Math.max(1, Math.floor(expected.size * 0.1)) &&
+    missing <= Math.max(1, Math.floor(expected.size * 0.1));
 
   return {
     passed,
     feedback: passed
       ? `Result set checks out. ${matched} of ${expected.size} expected ${column} values.`
-      : `${failMessage} Matched ${matched}/${expected.size} (${Math.round(recall * 100)}% recall).`,
+      : `${failMessage} Matched ${matched}/${expected.size}.`,
     result,
     matched,
     expected: expected.size,
   };
 }
 
-export async function evaluateMissingAlertsSql(sql: string): Promise<SqlEvalResult> {
-  const dataset = getChallengeDataset();
-  const expected = getMissingAlertTransactions(dataset).map((t) => t.txn_id);
-  const result = await evaluateIdSet(
+export async function evaluateMissingSourceAlertsSql(sql: string): Promise<SqlEvalResult> {
+  const expected = getMissingSourceAlerts().map((a) => a.alert_id);
+  return evaluateIdSet(
     sql,
     expected,
-    "txn_id",
-    "Include settled transactions that meet the published rules and are absent from fraud_alerts.",
+    "alert_id",
+    "Return alert_id values that exist in fraud_alerts_raw but not in fraud_alerts.",
   );
-  if (!result.passed) return result;
+}
 
-  const txnKey = result.result.columns.find((c) => c.toLowerCase() === "txn_id");
-  const got = asStringSet(result.result.rows.map((row) => (txnKey ? row[txnKey] : "")));
-  const hiddenMustHave = getMissingAlertTransactions(dataset)
-    .filter((t) => t.txn_ts.startsWith("2026-07") && t.category === "CRYPTO")
-    .slice(0, 8)
-    .map((t) => t.txn_id);
-  const hiddenHits = hiddenMustHave.filter((id) => got.has(id)).length;
-  if (hiddenHits < Math.min(5, hiddenMustHave.length)) {
+export async function evaluateChannelConcentrationSql(sql: string): Promise<SqlEvalResult> {
+  const result = await runChallengeQuery(sql);
+  const expectedIds = getMissingSourceAlerts().map((a) => a.alert_id);
+  const alertCol = result.columns.find((c) => c.toLowerCase() === "alert_id");
+  if (alertCol) {
+    const got = asStringSet(result.rows.map((row) => row[alertCol]));
+    const expected = asStringSet(expectedIds);
+    let matched = 0;
+    for (const id of got) if (expected.has(id)) matched += 1;
+    const passed = matched === expected.size && got.size === expected.size;
+    if (passed) {
+      return {
+        passed: true,
+        feedback: "The missing set is complete. Inspect channel — it is not spread evenly.",
+        result,
+        matched,
+        expected: expected.size,
+      };
+    }
+  }
+
+  const channelCol = result.columns.find((c) => c.toLowerCase() === "channel");
+  const countCol = result.columns.find((c) => {
+    const n = c.toLowerCase();
+    return ["missing", "cnt", "count", "n", "alerts"].includes(n) || n.includes("count");
+  });
+  if (channelCol && countCol) {
+    const upi = result.rows.find((row) => String(row[channelCol]).toUpperCase() === "UPI");
+    const upiCount = num(upi?.[countCol]) ?? 0;
+    const otherMissing = result.rows
+      .filter((row) => String(row[channelCol]).toUpperCase() !== "UPI")
+      .reduce((sum, row) => sum + (num(row[countCol]) ?? 0), 0);
+    const passed = upiCount === 14 && otherMissing === 0;
     return {
-      ...result,
-      passed: false,
-      feedback: "Hidden cases from the July CRYPTO leak are missing. Keep going.",
+      passed,
+      feedback: passed
+        ? "The missing alerts concentrate in a single channel. Fourteen of fourteen."
+        : "Channel mix is not conclusive yet. Compare source alerts to warehouse alerts by channel.",
+      result,
+      matched: passed ? 14 : upiCount,
+      expected: 14,
     };
   }
+
   return {
-    ...result,
-    feedback: `Result set matches the leak. ${result.matched} of ${result.expected} missing alerts recovered.`,
+    passed: false,
+    feedback:
+      "Return either the missing alert_id values, or a channel breakdown with a count/missing column.",
+    result,
+    matched: 0,
+    expected: 14,
   };
 }
 
 export async function evaluateSqlChallenge(challengeId: string, sql: string): Promise<SqlEvalResult> {
   const issues = getQualityIssues();
-  if (challengeId === "s2-sql-1") return evaluateMissingAlertsSql(sql);
+  if (challengeId === "s2-sql-1") return evaluateMissingSourceAlertsSql(sql);
+  if (challengeId === "s4-sql-channel") return evaluateChannelConcentrationSql(sql);
   if (challengeId === "s3-sql-dup-txn") {
     return evaluateIdSet(
       sql,

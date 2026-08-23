@@ -95,8 +95,9 @@ export function shouldGenerateAlert(txn: Transaction): boolean {
 function isLeakedJulyAlert(txn: Transaction): boolean {
   const month = txn.txn_ts.slice(0, 7);
   if (month !== "2026-07") return false;
-  if (txn.category === "CRYPTO") return true;
-  if (txn.channel === "WIRE" && txn.amount_inr < 250_000) return true;
+  const n = Number(txn.txn_id.replace(/\D/g, ""));
+  if (txn.category === "CRYPTO" && n % 8 > 2) return true;
+  if (n % 17 === 0) return true;
   return false;
 }
 
@@ -192,12 +193,12 @@ export function generateChallengeDataset(seed = 1262026): ChallengeDataset {
 
   for (const txn of transactions) {
     if (!shouldGenerateAlert(txn)) continue;
-    if (isLeakedJulyAlert(txn)) continue;
     const month = txn.txn_ts.slice(0, 7);
-    if (month !== "2026-07" && rng() < 0.03) continue;
-
+    const noiseSkip = month !== "2026-07" && rng() < 0.03;
     const ts = new Date(txn.txn_ts);
     ts.setMinutes(ts.getMinutes() + 4 + Math.floor(rng() * 90));
+    const status: FraudAlert["status"] = rng() < 0.55 ? "OPEN" : rng() < 0.5 ? "CLEARED" : "ESCALATED";
+    if (noiseSkip || isLeakedJulyAlert(txn)) continue;
 
     fraud_alerts.push({
       alert_id: `AL${pad(alertN++, 6)}`,
@@ -212,7 +213,7 @@ export function generateChallengeDataset(seed = 1262026): ChallengeDataset {
             : txn.category === "CRYPTO"
               ? "MEDIUM"
               : "HIGH",
-      status: rng() < 0.55 ? "OPEN" : rng() < 0.5 ? "CLEARED" : "ESCALATED",
+      status,
     });
   }
 

@@ -1,13 +1,20 @@
 export const SQL_STARTERS: Record<string, string> = {
-  "s2-sql-1": `-- Find settled transactions that should have an alert
--- but do not appear in fraud_alerts.
--- Rules: amount_inr >= 250000
---   OR (channel = 'WIRE' AND amount_inr >= 75000)
---   OR (category = 'CRYPTO' AND amount_inr >= 50000)
---   OR (is_international = 1 AND amount_inr >= 100000)
+  "s1-explore": `-- Warehouse snapshot. Click Run query to see rows.
 
-SELECT t.txn_id
-FROM transactions t
+SELECT month, COUNT(*) AS txn_count
+FROM (
+  SELECT substr(txn_ts, 1, 7) AS month
+  FROM transactions
+) AS by_month
+GROUP BY month
+ORDER BY month;
+`,
+  "s2-sql-1": `-- Alerts that exist in the source extract
+-- but never landed in the warehouse snapshot.
+-- PostgreSQL-style anti-join is fine.
+
+SELECT r.alert_id
+FROM fraud_alerts_raw r
 WHERE 1 = 0;
 `,
   "s3-sql-dup-txn": `-- tables: transactions_raw
@@ -28,7 +35,16 @@ WHERE 1 = 0;
 
 SELECT t.customer_id
 FROM fraud_alerts_raw a
-JOIN transactions_raw t ON t.txn_id = a.txn_id
+JOIN transactions t ON t.txn_id = a.txn_id
 WHERE 1 = 0;
+`,
+  "s4-sql-channel": `-- Are the source-only alerts spread across channels
+-- or concentrated? Join through transactions.
+
+SELECT t.channel, COUNT(*) AS missing
+FROM fraud_alerts_raw r
+JOIN transactions t ON t.txn_id = r.txn_id
+WHERE 1 = 0
+GROUP BY t.channel;
 `,
 };

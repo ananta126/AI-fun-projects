@@ -6,36 +6,42 @@ export function scoreExplanation(text: string, requiredGroups: string[][]): {
   const hay = text.toLowerCase();
   const hits = requiredGroups.filter((group) => group.some((kw) => hay.includes(kw))).length;
   const needed = Math.min(3, requiredGroups.length);
-  const passed = text.trim().length >= 80 && hits >= needed;
+  const passed = text.trim().length >= 60 && hits >= needed;
   return {
     passed,
     hits,
     feedback: passed
       ? "The write-up covers the core of the case."
-      : "Add more evidence: July drop, the alert pipeline leak (especially CRYPTO / WIRE), and data-quality noise such as duplicates. Write at least a short paragraph.",
+      : "Tie the answer back to the investigation: July, missing source alerts, data quality, and the concentrated channel. Write more than a slogan.",
   };
 }
 
-export const STAGE4_RUBRIC = [
-  ["july", "jul 2026", "this month"],
-  ["pipeline", "leak", "missing alert", "did not alert", "didn't alert", "drop"],
-  ["crypto", "wire"],
-  ["duplicate", "data quality", "null", "dirty", "inconsistent"],
-];
-
-export const MEMO_RUBRIC = [
-  ["dashboard", "alert", "under-count", "missing", "leak", "pipeline"],
-  ["july", "crypto", "wire", "duplicate", "left join", "transactions_raw"],
-  ["monitor", "fix", "pipeline", "data quality", "reconciliation", "alert rate"],
-];
+export const BRIEF_RUBRICS: Record<string, string[][]> = {
+  changed: [
+    ["july", "alert", "dashboard", "volume", "warehouse"],
+    ["declin", "drop", "fewer", "26", "missing"],
+  ],
+  why: [
+    ["warehouse", "pipeline", "dashboard", "alert"],
+    ["missing", "did not", "never", "source", "raw", "reach"],
+  ],
+  quality: [
+    ["duplicate", "null", "invalid", "transform", "quality", "raw"],
+    ["customer", "txn", "alert", "id", "pipeline"],
+  ],
+  channel: [["upi"]],
+  next: [
+    ["monitor", "reconcil", "fix", "pipeline", "do not", "cfo", "brief", "coverage", "alert rate"],
+  ],
+};
 
 export function scoreViva(questionId: string, text: string): { passed: boolean; feedback: string } {
   const hay = text.toLowerCase();
   const longEnough = text.trim().length >= 40;
   const keywords: Record<string, string[]> = {
-    "s5-viva-1": ["duplicate", "double", "count", "inflat", "dashboard", "volume", "quality"],
-    "s5-viva-2": ["left join", "left", "missing", "null", "unmatched", "anti-join", "not in"],
-    "s5-viva-3": ["alert", "rate", "reconcil", "monitor", "pipeline", "freshness", "coverage"],
+    "s5-viva-1": ["duplicate", "double", "count", "inflat", "quality", "transform", "row"],
+    "s5-viva-2": ["left join", "left", "missing", "null", "unmatched", "anti-join", "not in", "except"],
+    "s5-viva-3": ["alert", "rate", "reconcil", "monitor", "pipeline", "source", "warehouse", "coverage"],
   };
   const keys = keywords[questionId] ?? ["alert", "data"];
   const hit = keys.some((k) => hay.includes(k));
@@ -45,5 +51,26 @@ export function scoreViva(questionId: string, text: string): { passed: boolean; 
     feedback: passed
       ? "Noted for the exec briefing."
       : "Too thin. Answer in a sentence or two using the evidence from the investigation.",
+  };
+}
+
+export function scoreBriefing(answers: Record<string, string>): { passed: boolean; feedback: string; hits: number } {
+  const parts = ["changed", "why", "quality", "channel", "next"] as const;
+  let hits = 0;
+  for (const key of parts) {
+    const scored = scoreExplanation(answers[key] ?? "", BRIEF_RUBRICS[key] ?? []);
+    if (scored.passed || scored.hits >= 1) hits += scored.hits > 0 ? 1 : 0;
+    if (key === "channel") {
+      if ((answers[key] ?? "").toLowerCase().includes("upi")) hits += 1;
+    }
+  }
+  const filled = parts.every((key) => (answers[key] ?? "").trim().length >= 24);
+  const passed = filled && hits >= 5 && (answers.channel ?? "").toLowerCase().includes("upi");
+  return {
+    passed,
+    hits,
+    feedback: passed
+      ? "The room can work with this. Stay with the evidence."
+      : "Cover all five: what changed, why the dashboard declined, the data-quality issue, the affected channel, and what the bank should do next.",
   };
 }
