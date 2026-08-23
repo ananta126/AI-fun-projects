@@ -18,7 +18,6 @@ import { SQL_STARTERS } from "@/data/sql-starters";
 import { evaluateExactAnswer } from "@/lib/evaluate-exact";
 import { evaluateSqlChallenge } from "@/lib/evaluation";
 import { evaluateImpact, type ImpactPayload } from "@/lib/evaluate-evidence";
-import { runChallengeQuery } from "@/lib/sql-engine";
 import {
   beginInvestigation,
   completeStage,
@@ -227,7 +226,6 @@ export function StageClient({ stageId }: { stageId: string }) {
   }
 
   const showWorkspace = begun || alreadyDone;
-  const showSql = showWorkspace && (challenge.type === "sql" || currentStage.order >= 2);
 
   return (
     <AppShell
@@ -263,9 +261,20 @@ export function StageClient({ stageId }: { stageId: string }) {
             />
           ) : null}
 
-          {showWorkspace ? (
+              {showWorkspace ? (
             <>
               <DataExplorer allowedTables={evidenceTables} />
+              <SqlEditor
+                key={`workbench-${currentStage.id}`}
+                allowedTables={evidenceTables}
+                starter={
+                  challenge.type === "sql"
+                    ? SQL_STARTERS[challenge.id]
+                    : SQL_STARTERS["s1-explore"]
+                }
+                submitDisabled={busy || alreadyDone}
+                onEvaluate={challenge.type === "sql" ? onSql : undefined}
+              />
               <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
                 Finding {qIndex + 1} of {stage.challenges.length}
               </p>
@@ -278,12 +287,9 @@ export function StageClient({ stageId }: { stageId: string }) {
                 />
               ) : null}
               {challenge.type === "sql" ? (
-                <SqlEditor
-                  key={challenge.id}
-                  disabled={busy || alreadyDone}
-                  starter={SQL_STARTERS[challenge.id]}
-                  onEvaluate={onSql}
-                />
+                <p className="text-sm text-muted">
+                  Use the workbench above. Run the query until the result set looks right, then Submit finding.
+                </p>
               ) : null}
               {challenge.type === "numerical" ? (
                 <ImpactForm key={challenge.id} disabled={busy || alreadyDone} onSubmit={onImpact} />
@@ -299,17 +305,6 @@ export function StageClient({ stageId }: { stageId: string }) {
                   disabled={busy || alreadyDone}
                   minChars={challenge.id.startsWith("s5-viva") ? 40 : 80}
                   onSubmit={onText}
-                />
-              ) : null}
-              {challenge.type !== "sql" && showSql ? (
-                <SqlEditor
-                  key={`probe-${challenge.id}`}
-                  disabled={busy}
-                  starter={SQL_STARTERS[challenge.id] ?? SQL_STARTERS["s2-sql-1"]}
-                  onEvaluate={async (sql) => {
-                    const data = await runChallengeQuery(sql);
-                    return { passed: false, feedback: "Probe query only — it is not scored.", result: data };
-                  }}
                 />
               ) : null}
               {feedback ? <p className="text-sm text-teal">{feedback}</p> : null}

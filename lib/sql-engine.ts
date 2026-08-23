@@ -1,7 +1,7 @@
 import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import { getChallengeDataset } from "@/lib/challenge-data";
 import { getMessyDataset, getPipelineLogs } from "@/lib/messy-data";
-import { assertReadOnlySql, toSqliteDialect } from "@/lib/sql-safety";
+import { assertAllowedTables, assertReadOnlySql, toSqliteDialect } from "@/lib/sql-safety";
 import type { QueryResult } from "@/lib/sql-types";
 
 const ROW_LIMIT = 500;
@@ -211,10 +211,16 @@ function seedDb(db: Database) {
 
 export type { QueryResult } from "@/lib/sql-types";
 
-export async function runChallengeQuery(sql: string): Promise<QueryResult> {
-  assertReadOnlySql(sql);
+export async function runChallengeQuery(
+  sql: string,
+  allowedTables?: string[],
+): Promise<QueryResult> {
+  const normalized = assertReadOnlySql(sql);
+  if (allowedTables?.length) {
+    assertAllowedTables(normalized, allowedTables);
+  }
   const db = await getChallengeDb();
-  const rewritten = toSqliteDialect(sql);
+  const rewritten = toSqliteDialect(normalized);
   const started = Date.now();
   let result;
   try {

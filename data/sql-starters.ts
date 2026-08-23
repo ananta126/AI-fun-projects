@@ -1,4 +1,14 @@
 export const SQL_STARTERS: Record<string, string> = {
+  "s1-explore": `-- Warehouse snapshot. Click Run query to see rows.
+
+SELECT month, COUNT(*) AS txn_count
+FROM (
+  SELECT substr(txn_ts, 1, 7) AS month
+  FROM transactions
+) AS by_month
+GROUP BY month
+ORDER BY month;
+`,
   "s2-sql-1": `-- Alerts that exist in the source extract
 -- but never landed in the warehouse snapshot.
 -- PostgreSQL-style anti-join is fine.
@@ -33,6 +43,7 @@ WHERE 1 = 0;
 
 SELECT t.channel, COUNT(*) AS missing
 FROM fraud_alerts_raw r
+JOIN transactions t ON t.txn_id = r.txn_id
 WHERE 1 = 0
 GROUP BY t.channel;
 `,
