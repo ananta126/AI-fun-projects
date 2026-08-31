@@ -44,7 +44,41 @@ You can point the app at:
 
 Nested date folders are found automatically. PIS folders are left untouched.
 
-## Windows prerequisite
+## Share with a client (no install on their PC)
+
+The client does **not** need Python or Tesseract. You host the app; they use a browser.
+
+1. You start the app on a machine that has Tesseract (your PC, a server, or Streamlit Community Cloud).
+2. Send them the URL.
+3. They open **Client link (upload zip)**, upload `June 26-....zip`, wait for OCR, then download `sorted_invoices.zip`.
+
+### Option A — you run it, they open the link on the same network
+
+```bash
+streamlit run app.py --server.address 0.0.0.0
+```
+
+Share `http://YOUR-PC-IP:8501`. Keep the PC on while they use it. This is only for a trusted local network.
+
+### Option B — Streamlit Community Cloud (public URL)
+
+Deploy `invoice_sorter_app_v2/app.py` from GitHub. Add a root `packages.txt` containing:
+
+```
+tesseract-ocr
+tesseract-ocr-eng
+```
+
+The client then only needs the Streamlit URL. Invoice PDFs will pass through that host, so use a private app if the documents are confidential.
+
+### Option C — you process the zip and send results back
+
+If you cannot host a URL, have the client send the month zip. You run the sorter locally and return `sorted_invoices.zip`. They never install anything.
+
+Do not email a Python installer and ask the client to set up Tesseract unless they have IT support.
+
+## Windows prerequisite (only for local / this-computer mode)
+
 
 Tesseract OCR must be installed separately.
 

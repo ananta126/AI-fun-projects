@@ -10,6 +10,7 @@ These tests reconstruct the documented layout from app.py / README:
 
 from __future__ import annotations
 
+import io
 import shutil
 import sys
 from pathlib import Path
@@ -28,7 +29,9 @@ from app import (  # noqa: E402
     parse_date_folder,
     process,
     process_invoice_file,
+    process_uploaded_zip,
     split_invoice_packages,
+    zip_output_tree,
 )
 from tests.pdf_fixtures import SAMPLE_INVOICES, write_scanned_pdf, write_text_pdf  # noqa: E402
 
@@ -220,3 +223,30 @@ def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
     customer = output_root / "PORITE INDIA PVT.LTD"
     assert (customer / "25-Jun-26" / "20242500788.pdf").exists()
     assert (customer / "30-Jun-26" / "20242500752.pdf").exists()
+
+
+def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
+    import zipfile
+
+    bundle = tmp_path / "bundle"
+    write_text_pdf(
+        bundle / "June 26" / "25-Jun-26" / "Invoice" / "3344.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    src_zip = tmp_path / "month.zip"
+    with zipfile.ZipFile(src_zip, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+
+    results, out_bytes = process_uploaded_zip(
+        src_zip.read_bytes(),
+        "June 26.zip",
+        tmp_path / "work",
+    )
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert copied[0]["invoice_number"] == "20242500788"
+
+    listing = zipfile.ZipFile(io.BytesIO(out_bytes)).namelist()
+    assert any(name.endswith("20242500788.pdf") for name in listing)
+    assert any("PORITE INDIA PVT.LTD" in name for name in listing)
+
