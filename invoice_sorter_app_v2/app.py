@@ -13,6 +13,11 @@ import pytesseract
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
+# Windows default install is often missing from PATH.
+_WINDOWS_TESSERACT = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+if shutil.which("tesseract") is None and _WINDOWS_TESSERACT.is_file():
+    pytesseract.pytesseract.tesseract_cmd = str(_WINDOWS_TESSERACT)
+
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
 
