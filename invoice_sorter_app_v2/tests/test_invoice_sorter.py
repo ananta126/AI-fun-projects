@@ -1,0 +1,160 @@
+"""Tests for invoice sorter v2.
+
+The original sample (`3344.pdf`) was not uploaded with this run.
+These tests reconstruct the documented layout from app.py / README:
+  - scanned-style image PDFs
+  - Invoice No. & Date : 20242500788 - 29/04/2024
+  - billed-to customer PORITE INDIA PVT.LTD.
+  - one PDF with invoice starts on pages 1, 4, 9 (13 pages total)
+"""
+
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app import (  # noqa: E402
+    extract_customer_name,
+    extract_invoice_number,
+    find_invoice_starts,
+    looks_like_invoice_page,
+    ocr_pdf,
+    parse_date_folder,
+    process,
+    process_invoice_file,
+    split_invoice_packages,
+)
+from tests.pdf_fixtures import SAMPLE_INVOICES, write_scanned_pdf, write_text_pdf  # noqa: E402
+
+
+SAMPLE_PAGE = (
+    "TAX INVOICE\n"
+    "Invoice No. & Date : 20242500788 - 29/04/2024\n"
+    "Details Of Recipient :(Billed to)\n"
+    "PORITE INDIA PVT.LTD.,\n"
+)
+
+
+def test_extract_invoice_number_strips_printed_date():
+    assert extract_invoice_number(SAMPLE_PAGE) == "20242500788"
+
+
+def test_extract_customer_prefers_billed_to_recipient():
+    assert extract_customer_name(SAMPLE_PAGE) == "PORITE INDIA PVT.LTD."
+
+
+def test_looks_like_invoice_page():
+    assert looks_like_invoice_page(SAMPLE_PAGE)
+    assert not looks_like_invoice_page("DELIVERY CHALLAN\nGoods received")
+
+
+def test_parse_date_folder():
+    assert parse_date_folder("25-Jun-26").isoformat() == "2026-06-25"
+    assert parse_date_folder("Invoice") is None
+
+
+def test_split_packages_match_documented_page_ranges(tmp_path):
+    pdf_path = write_text_pdf(tmp_path / "3344.pdf")
+    page_texts = ocr_pdf(pdf_path)
+    starts = find_invoice_starts(page_texts)
+    assert starts == [0, 3, 8]
+    assert len(page_texts) == 13
+
+    packages = split_invoice_packages(pdf_path, starts)
+    ranges = [(start, end) for start, end, _path in packages]
+    assert ranges == [(0, 3), (3, 8), (8, 13)]
+
+    for _, _, package_path in packages:
+        if package_path.exists():
+            package_path.unlink()
+
+
+def test_process_text_pdf_into_customer_date_folders(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    invoice_dir = input_root / "25-Jun-26" / "Invoice"
+    source = write_text_pdf(invoice_dir / "3344.pdf")
+
+    results = process(input_root, output_root)
+
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert [r["invoice_number"] for r in copied] == [
+        "20242500788",
+        "20242500752",
+        "20242500686",
+    ]
+    assert all(r["customer"] == "PORITE INDIA PVT.LTD." for r in copied)
+    assert all(r["source_pages"] for r in copied)
+
+    customer_dir = output_root / "PORITE INDIA PVT.LTD." / "25-Jun-26"
+    for invoice in SAMPLE_INVOICES:
+        dest = customer_dir / f"{invoice['invoice_no']}.pdf"
+        assert dest.exists(), dest
+        assert dest.stat().st_size > 0
+
+    # Source file is copied, not moved.
+    assert source.exists()
+
+
+def test_missing_invoice_page_is_review(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    pdf_path = input_root / "25-Jun-26" / "Invoice" / "notes.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "DELIVERY CHALLAN\nNo invoice header here.")
+    doc.save(pdf_path)
+    doc.close()
+
+    results = process_invoice_file(pdf_path, input_root, output_root)
+    assert results[0]["status"] == "REVIEW"
+    assert "No invoice page detected" in results[0]["reason"]
+
+
+def test_missing_invoice_folder_is_skipped(tmp_path):
+    input_root = tmp_path / "Input"
+    (input_root / "25-Jun-26" / "PIS").mkdir(parents=True)
+    results = process(input_root, tmp_path / "Output")
+    assert results[0]["status"] == "SKIPPED"
+
+
+def test_duplicate_destination_is_not_overwritten(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    invoice_dir = input_root / "25-Jun-26" / "Invoice"
+    write_text_pdf(invoice_dir / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+
+    first = process(input_root, output_root)
+    second = process(input_root, output_root)
+
+    assert first[0]["status"] == "COPIED"
+    assert second[0]["status"] == "COPIED"
+    dest_dir = output_root / "PORITE INDIA PVT.LTD." / "25-Jun-26"
+    assert (dest_dir / "20242500788.pdf").exists()
+    assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="Tesseract OCR is not installed")
+def test_ocr_scanned_pdf_extracts_sample_invoices(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    invoice_dir = input_root / "25-Jun-26" / "Invoice"
+    write_scanned_pdf(invoice_dir / "3344.pdf")
+
+    results = process(input_root, output_root)
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert [r["invoice_number"] for r in copied] == [
+        "20242500788",
+        "20242500752",
+        "20242500686",
+    ]
+    assert all(r["customer"] == "PORITE INDIA PVT.LTD." for r in copied)
