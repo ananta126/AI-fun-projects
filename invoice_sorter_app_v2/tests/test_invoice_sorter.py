@@ -165,3 +165,58 @@ def test_ocr_scanned_pdf_extracts_sample_invoices(tmp_path):
         "20242500686",
     ]
     assert all(r["customer"] == "PORITE INDIA PVT.LTD" for r in copied)
+
+
+def test_nested_june_folder_creates_customer_then_day(tmp_path):
+    input_root = tmp_path / "June 26"
+    output_root = tmp_path / "Output"
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    write_text_pdf(
+        input_root / "26-Jun-26" / "Invoice" / "other.pdf",
+        invoices=[SAMPLE_INVOICES[2]],
+    )
+    (input_root / "27-Jun-26" / "PIS").mkdir(parents=True)
+
+    results = process(input_root, output_root)
+    copied = [r for r in results if r["status"] == "COPIED"]
+    skipped = [r for r in results if r["status"] == "SKIPPED"]
+
+    assert {(r["invoice_number"], r["date_folder"]) for r in copied} == {
+        ("20242500788", "25-Jun-26"),
+        ("20242500686", "26-Jun-26"),
+    }
+    assert skipped[0]["date_folder"] == "27-Jun-26"
+    assert (output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (output_root / "PORITE INDIA PVT.LTD" / "26-Jun-26" / "20242500686.pdf").exists()
+
+
+def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
+    import zipfile
+
+    bundle = tmp_path / "bundle"
+    write_text_pdf(
+        bundle / "June 26" / "25-Jun-26" / "Invoice" / "3344.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    write_text_pdf(
+        bundle / "June 26" / "30-Jun-26" / "Invoice" / "later.pdf",
+        invoices=[SAMPLE_INVOICES[1]],
+    )
+    zip_path = tmp_path / "June 26-20260831T053601Z-001.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+
+    output_root = tmp_path / "Output"
+    results = process(zip_path, output_root)
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert {(r["invoice_number"], r["date_folder"]) for r in copied} == {
+        ("20242500788", "25-Jun-26"),
+        ("20242500752", "30-Jun-26"),
+    }
+    customer = output_root / "PORITE INDIA PVT.LTD"
+    assert (customer / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (customer / "30-Jun-26" / "20242500752.pdf").exists()

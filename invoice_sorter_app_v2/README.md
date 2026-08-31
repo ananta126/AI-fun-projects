@@ -34,8 +34,15 @@ Output/
     25-Jun-26/
       INVOICE_NUMBER.pdf
 
-The date folder is deliberately taken from the source folder, not from the
-invoice date printed inside the PDF. This preserves the original filing structure.
+The date folder is taken from the source day folder (`25-Jun-26`), not from
+the invoice date printed inside the PDF.
+
+You can point the app at:
+
+- the extracted `June 26` folder, or
+- the zip (`June 26-20260831T053601Z-001.zip`)
+
+Nested date folders are found automatically. PIS folders are left untouched.
 
 ## Windows prerequisite
 

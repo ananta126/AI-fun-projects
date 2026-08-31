@@ -1,6 +1,7 @@
 
 import re
 import shutil
+import zipfile
 from pathlib import Path
 from datetime import datetime
 
@@ -169,8 +170,7 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
     packages = split_invoice_packages(source_pdf, invoice_starts)
     results = []
 
-    date_folder = source_pdf.parent.parent.name
-    parsed_date = parse_date_folder(date_folder)
+    date_folder = date_folder_name_for(source_pdf, root)
 
     for start, end, package_path in packages:
         first_page_text = page_texts[start][1]
@@ -193,6 +193,8 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
 
             customer = safe_name(customer)
             invoice_no = safe_name(invoice_no)
+
+            date_folder = date_folder_name_for(source_pdf, root)
 
             # IMPORTANT:
             # The date folder comes from the SOURCE folder, not the invoice date.
@@ -225,18 +227,80 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
     return results
 
 
-def process(root: Path, output_root: Path):
-    results = []
+def date_folder_name_for(path: Path, root: Path) -> str:
+    for parent in [path, *path.parents]:
+        if DATE_FOLDER_RE.match(parent.name):
+            return parent.name
+        if parent == root:
+            break
+    return path.parent.parent.name
 
-    date_folders = sorted(
-        p for p in root.iterdir()
+
+def find_date_folders(root: Path):
+    folders = [
+        p for p in root.rglob("*")
         if p.is_dir() and DATE_FOLDER_RE.match(p.name)
+    ]
+    return sorted(
+        folders,
+        key=lambda p: (parse_date_folder(p.name) or datetime.min.date(), str(p)),
     )
 
-    for date_folder in date_folders:
-        invoice_dir = date_folder / "Invoice"
 
-        if not invoice_dir.is_dir():
+def invoice_pdfs_in(date_folder: Path):
+    invoice_dir = None
+    for child in date_folder.iterdir():
+        if child.is_dir() and child.name.lower() == "invoice":
+            invoice_dir = child
+            break
+
+    if invoice_dir is None:
+        return None
+
+    return sorted(
+        p for p in invoice_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() == ".pdf" and not p.name.startswith(".")
+    )
+
+
+def extract_zip(archive: Path, dest: Path) -> Path:
+    dest.mkdir(parents=True, exist_ok=True)
+    dest_resolved = dest.resolve()
+
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            target = (dest / info.filename).resolve()
+            if dest_resolved not in target.parents and target != dest_resolved:
+                raise ValueError(f"Unsafe zip entry: {info.filename}")
+        zf.extractall(dest)
+
+    return dest
+
+
+def resolve_input(path: Path) -> Path:
+    path = path.expanduser()
+    if path.is_file() and path.suffix.lower() == ".zip":
+        dest = path.parent / f"{path.stem}_extracted"
+        if not find_date_folders(dest):
+            if dest.exists():
+                shutil.rmtree(dest)
+            extract_zip(path, dest)
+        return dest
+    if path.is_dir():
+        return path
+    raise FileNotFoundError(path)
+
+
+def process(root: Path, output_root: Path):
+    root = resolve_input(root)
+    results = []
+
+    date_folders = find_date_folders(root)
+
+    for date_folder in date_folders:
+        pdfs = invoice_pdfs_in(date_folder)
+
+        if pdfs is None:
             results.append({
                 "status": "SKIPPED",
                 "source_file": "",
@@ -244,8 +308,6 @@ def process(root: Path, output_root: Path):
                 "reason": "Invoice folder not found",
             })
             continue
-
-        pdfs = sorted(invoice_dir.rglob("*.pdf"))
 
         for pdf in pdfs:
             results.extend(process_invoice_file(pdf, root, output_root))
@@ -258,20 +320,20 @@ def render_ui():
 
     st.title("📁 Invoice Sorter")
     st.write(
-        "Scanned invoice PDFs → OCR → customer + invoice number → "
-        "Customer / source-date / invoice-number.pdf"
+        "Extract date folders → OCR invoices → create a folder per customer → "
+        "sort that day's invoices under the customer."
     )
 
     st.info(
-        "The supplied sample is a scanned PDF, so this version uses OCR. "
-        "It also handles one PDF containing multiple invoice packages."
+        "Point Input at the extracted `June 26` folder, or at the `.zip` itself. "
+        "Scanned PDFs are OCRed. One PDF can contain several invoice packages."
     )
 
     with st.sidebar:
         st.header("Folders")
         input_dir = st.text_input(
-            "Input root",
-            placeholder=r"C:\Invoices\Input"
+            "Input zip or folder",
+            placeholder=r"C:\Users\Ananta3011\Downloads\June 26-20260831T053601Z-001.zip"
         )
         output_dir = st.text_input(
             "Output root",
@@ -281,14 +343,14 @@ def render_ui():
         st.header("What this version does")
         st.markdown(
             """
-            - Finds `DD-MMM-YY` folders
+            - Accepts a zip or an extracted folder
+            - Finds nested `DD-MMM-YY` day folders
             - Opens each `Invoice` folder
             - OCRs scanned PDFs
             - Finds invoice pages
-            - Extracts customer name
-            - Extracts invoice number
+            - Creates a folder named after the customer
+            - Sorts invoices into that day's subfolder
             - Splits multi-invoice PDFs
-            - Preserves the original date folder
             - Flags uncertain files
             """
         )
@@ -297,18 +359,14 @@ def render_ui():
 
     st.code(
     r"""
-    Input/
-    ├── 25-Jun-26/
-    │   ├── Invoice/
-    │   │   ├── invoice_file_1.pdf
-    │   │   └── invoice_file_2.pdf
-    │   └── PIS/
-    ├── 26-Jun-26/
-    │   ├── Invoice/
-    │   └── PIS/
-    └── 27-Jun-26/
-        ├── Invoice/
-        └── PIS/
+    June 26-....zip
+    └── June 26/
+        ├── 25-Jun-26/
+        │   ├── Invoice/
+        │   └── PIS/
+        ├── 26-Jun-26/
+        ├── 27-Jun-26/
+        └── 30-Jun-26/
     """, language="text")
 
     st.markdown("### Output")
@@ -316,50 +374,52 @@ def render_ui():
     st.code(
     r"""
     Output/
-    ├── PORITE INDIA PVT.LTD./
-    │   ├── 25-Jun-26/
-    │   │   ├── 20242500788.pdf
-    │   │   └── 20242500752.pdf
-    │   └── 26-Jun-26/
-    │       └── 20242500686.pdf
-    └── Another Customer/
+    └── PORITE INDIA PVT.LTD/
+        ├── 25-Jun-26/
+        │   ├── 20242500788.pdf
+        │   └── 20242500752.pdf
+        ├── 26-Jun-26/
+        │   └── 20242500686.pdf
         └── 27-Jun-26/
             └── 20242500XXX.pdf
     """, language="text")
 
     if st.button("🚀 Process invoices", type="primary"):
         if not input_dir or not output_dir:
-            st.error("Enter both Input root and Output root.")
-        elif not Path(input_dir).is_dir():
-            st.error(f"Input folder does not exist: {input_dir}")
+            st.error("Enter both Input zip/folder and Output root.")
         else:
-            root = Path(input_dir)
-            output_root = Path(output_dir)
-            output_root.mkdir(parents=True, exist_ok=True)
-
-            with st.spinner(
-                "OCR is reading the invoices. Scanned PDFs can take a little while..."
-            ):
-                results = process(root, output_root)
-
-            if not results:
-                st.warning("No matching date folders / invoice PDFs were found.")
+            source = Path(input_dir)
+            if not source.exists():
+                st.error(f"Input does not exist: {input_dir}")
+            elif not (source.is_dir() or source.suffix.lower() == ".zip"):
+                st.error("Input must be a folder or a .zip file.")
             else:
-                copied = sum(r["status"] == "COPIED" for r in results)
-                review = sum(r["status"] == "REVIEW" for r in results)
-                skipped = sum(r["status"] == "SKIPPED" for r in results)
+                output_root = Path(output_dir)
+                output_root.mkdir(parents=True, exist_ok=True)
 
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Invoices copied", copied)
-                c2.metric("Needs review", review)
-                c3.metric("Skipped", skipped)
+                with st.spinner(
+                    "OCR is reading the invoices. Scanned PDFs can take a little while..."
+                ):
+                    results = process(source, output_root)
 
-                st.dataframe(results, use_container_width=True)
+                if not results:
+                    st.warning("No matching date folders / invoice PDFs were found.")
+                else:
+                    copied = sum(r["status"] == "COPIED" for r in results)
+                    review = sum(r["status"] == "REVIEW" for r in results)
+                    skipped = sum(r["status"] == "SKIPPED" for r in results)
 
-                if review:
-                    st.warning(
-                        "Some files need review. Nothing uncertain was silently filed."
-                    )
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Invoices copied", copied)
+                    c2.metric("Needs review", review)
+                    c3.metric("Skipped", skipped)
+
+                    st.dataframe(results, use_container_width=True)
+
+                    if review:
+                        st.warning(
+                            "Some files need review. Nothing uncertain was silently filed."
+                        )
 
 
 if __name__ == "__main__":
