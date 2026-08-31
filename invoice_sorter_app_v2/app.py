@@ -96,7 +96,7 @@ def extract_customer_name(text: str):
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.I)
         if match:
-            return re.sub(r"\s+", " ", match.group(1)).strip(" ,.-")
+            return re.sub(r"\s+", " ", match.group(1)).strip(" ,-")
 
     # Fallback specifically useful for OCR of this invoice family.
     match = re.search(r"(PORITE\s+INDIA\s+PVT\.?\s*LTD\.?)", text, flags=re.I)

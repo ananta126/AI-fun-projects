@@ -89,10 +89,11 @@ def test_process_text_pdf_into_customer_date_folders(tmp_path):
         "20242500752",
         "20242500686",
     ]
-    assert all(r["customer"] == "PORITE INDIA PVT.LTD." for r in copied)
+    assert all(r["customer"] == "PORITE INDIA PVT.LTD" for r in copied)
     assert all(r["source_pages"] for r in copied)
 
-    customer_dir = output_root / "PORITE INDIA PVT.LTD." / "25-Jun-26"
+    # Windows folders cannot end with a period, so safe_name strips it.
+    customer_dir = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26"
     for invoice in SAMPLE_INVOICES:
         dest = customer_dir / f"{invoice['invoice_no']}.pdf"
         assert dest.exists(), dest
@@ -138,7 +139,7 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
 
     assert first[0]["status"] == "COPIED"
     assert second[0]["status"] == "COPIED"
-    dest_dir = output_root / "PORITE INDIA PVT.LTD." / "25-Jun-26"
+    dest_dir = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26"
     assert (dest_dir / "20242500788.pdf").exists()
     assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
 
@@ -157,4 +158,4 @@ def test_ocr_scanned_pdf_extracts_sample_invoices(tmp_path):
         "20242500752",
         "20242500686",
     ]
-    assert all(r["customer"] == "PORITE INDIA PVT.LTD." for r in copied)
+    assert all(r["customer"] == "PORITE INDIA PVT.LTD" for r in copied)
