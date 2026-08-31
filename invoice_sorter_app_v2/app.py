@@ -20,6 +20,8 @@ if shutil.which("tesseract") is None and _WINDOWS_TESSERACT.is_file():
 
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
+OCR_SCALE = 1.5
+OCR_CONFIG = "--oem 1 --psm 6"
 
 
 def safe_name(value: str) -> str:
@@ -38,28 +40,26 @@ def parse_date_folder(folder_name: str):
     return None
 
 
-def render_page(page, scale=2.5):
+def render_page(page, scale=OCR_SCALE):
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-    return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    return image.convert("L")
 
 
 def ocr_pdf(pdf_path: Path):
     """
-    OCR every page because the sample invoice is a scanned/image PDF.
-    Returns [(page_number_zero_based, text), ...].
+    OCR scanned pages. Embedded text is used when present.
+    Pages are rendered smaller and in grayscale to keep Tesseract faster.
     """
     doc = fitz.open(pdf_path)
     output = []
 
     for page_no, page in enumerate(doc):
-        # If a PDF has usable embedded text, keep it; otherwise OCR the image.
         embedded = page.get_text("text").strip()
         if len(embedded) >= 40:
             text = embedded
         else:
-            img = render_page(page)
-            text = pytesseract.image_to_string(img, config="--psm 6")
-
+            text = pytesseract.image_to_string(render_page(page), config=OCR_CONFIG)
         output.append((page_no, text))
 
     doc.close()
