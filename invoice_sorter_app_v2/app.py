@@ -23,8 +23,10 @@ if shutil.which("tesseract") is None and _WINDOWS_TESSERACT.is_file():
 
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
-OCR_SCALE = 1.5
-OCR_CONFIG = "--oem 1 --psm 6"
+OCR_SCALE = 2.5
+OCR_CONFIG = "--psm 6"
+# Stop Tesseract OpenMP from oversubscribing when several workers run.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 _OUTPUT_LOCK = threading.Lock()
 
 
@@ -55,7 +57,7 @@ def parse_date_folder(folder_name: str):
 def render_page(page, scale=OCR_SCALE):
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
     image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    return image.convert("L")
+    return image
 
 
 def ocr_pdf(pdf_path: Path):
