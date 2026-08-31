@@ -1,9 +1,12 @@
 
 import io
+import os
 import re
 import shutil
 import tempfile
+import threading
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +25,15 @@ if shutil.which("tesseract") is None and _WINDOWS_TESSERACT.is_file():
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
 OCR_SCALE = 1.5
 OCR_CONFIG = "--oem 1 --psm 6"
+_OUTPUT_LOCK = threading.Lock()
+
+
+def worker_count():
+    # Pytest stays single-threaded so OCR tests stay stable.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return 1
+    cpu = os.cpu_count() or 2
+    return max(1, min(4, cpu))
 
 
 def safe_name(value: str) -> str:
@@ -49,20 +61,37 @@ def render_page(page, scale=OCR_SCALE):
 def ocr_pdf(pdf_path: Path):
     """
     OCR scanned pages. Embedded text is used when present.
-    Pages are rendered smaller and in grayscale to keep Tesseract faster.
+    Pages are rendered on one thread (PyMuPDF is not thread-safe), then
+    Tesseract runs in parallel like database workers on independent rows.
     """
     doc = fitz.open(pdf_path)
-    output = []
+    output = [None] * doc.page_count
+    pending = []
 
     for page_no, page in enumerate(doc):
         embedded = page.get_text("text").strip()
         if len(embedded) >= 40:
-            text = embedded
+            output[page_no] = (page_no, embedded)
         else:
-            text = pytesseract.image_to_string(render_page(page), config=OCR_CONFIG)
-        output.append((page_no, text))
+            pending.append((page_no, render_page(page)))
 
     doc.close()
+
+    def _ocr(item):
+        page_no, image = item
+        return page_no, pytesseract.image_to_string(image, config=OCR_CONFIG)
+
+    if pending:
+        workers = min(worker_count(), len(pending))
+        if workers == 1:
+            for item in pending:
+                page_no, text = _ocr(item)
+                output[page_no] = (page_no, text)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for page_no, text in pool.map(_ocr, pending):
+                    output[page_no] = (page_no, text)
+
     return output
 
 
@@ -152,7 +181,9 @@ def split_invoice_packages(pdf_path: Path, invoice_starts):
         for page_no in range(start, end):
             writer.add_page(reader.pages[page_no])
 
-        temp_path = pdf_path.parent / f".invoice_package_{idx + 1}.pdf"
+        temp_path = Path(tempfile.gettempdir()) / (
+            f".invoice_package_{os.getpid()}_{threading.get_ident()}_{idx + 1}.pdf"
+        )
         with open(temp_path, "wb") as f:
             writer.write(f)
 
@@ -207,15 +238,12 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
             # The date folder comes from the SOURCE folder, not the invoice date.
             # This preserves the user's original filing date.
             destination_dir = output_root / customer / date_folder
-            destination_dir.mkdir(parents=True, exist_ok=True)
-
-            destination = destination_dir / f"{invoice_no}.pdf"
-
-            if destination.exists():
-                # Never silently overwrite.
-                destination = destination_dir / f"{invoice_no}__DUPLICATE.pdf"
-
-            shutil.copy2(package_path, destination)
+            with _OUTPUT_LOCK:
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                destination = destination_dir / f"{invoice_no}.pdf"
+                if destination.exists():
+                    destination = destination_dir / f"{invoice_no}__DUPLICATE.pdf"
+                shutil.copy2(package_path, destination)
 
             results.append({
                 "status": "COPIED",
@@ -301,6 +329,7 @@ def resolve_input(path: Path) -> Path:
 def process(root: Path, output_root: Path):
     root = resolve_input(root)
     results = []
+    jobs = []
 
     date_folders = find_date_folders(root)
 
@@ -316,8 +345,20 @@ def process(root: Path, output_root: Path):
             })
             continue
 
-        for pdf in pdfs:
-            results.extend(process_invoice_file(pdf, root, output_root))
+        jobs.extend(pdfs)
+
+    def _run(pdf):
+        return process_invoice_file(pdf, root, output_root)
+
+    if jobs:
+        workers = min(worker_count(), len(jobs))
+        if workers == 1:
+            for pdf in jobs:
+                results.extend(_run(pdf))
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for file_results in pool.map(_run, jobs):
+                    results.extend(file_results)
 
     return results
 
