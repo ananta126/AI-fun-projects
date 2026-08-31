@@ -52,6 +52,12 @@ def test_extract_customer_prefers_billed_to_recipient():
 def test_looks_like_invoice_page():
     assert looks_like_invoice_page(SAMPLE_PAGE)
     assert not looks_like_invoice_page("DELIVERY CHALLAN\nGoods received")
+    challan = (
+        "Original For Consignee\n"
+        "Total Invoice Value (In Word) Indian Rupees One Lakh\n"
+        "Outward No: LL2-4Y invoice No,; ——__ |\n"
+    )
+    assert not looks_like_invoice_page(challan)
 
 
 def test_parse_date_folder():

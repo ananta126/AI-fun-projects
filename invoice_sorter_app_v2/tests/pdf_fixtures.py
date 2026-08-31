@@ -44,7 +44,10 @@ def invoice_page_text(invoice_no: str, invoice_date: str, customer: str) -> str:
 def supporting_page_text(label: str) -> str:
     return (
         f"{label}\n"
+        "Original For Consignee\n"
         "This is a delivery challan / receipt page.\n"
+        "Total Invoice Value (In Word) Indian Rupees One Lakh\n"
+        "Outward No: LL2-4Y Invoice No: ________\n"
         "It should stay attached to the preceding invoice package.\n"
     )
 

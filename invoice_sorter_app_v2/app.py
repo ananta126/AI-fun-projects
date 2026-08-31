@@ -107,11 +107,13 @@ def extract_customer_name(text: str):
 
 
 def looks_like_invoice_page(text: str):
-    # The supplied PDF has clear invoice pages containing these words.
-    return (
-        re.search(r"\bINVOICE\b", text, re.I) is not None
-        and re.search(r"Invoice\s*No", text, re.I) is not None
-    )
+    # Delivery challans in the sample also say "Total Invoice Value" and have a
+    # blank "Invoice No" form field. Require an actual invoice number.
+    if re.search(r"\bINVOICE\b", text, re.I) is None:
+        return False
+    if re.search(r"Invoice\s*No", text, re.I) is None:
+        return False
+    return extract_invoice_number(text) is not None
 
 
 def find_invoice_starts(page_texts):
