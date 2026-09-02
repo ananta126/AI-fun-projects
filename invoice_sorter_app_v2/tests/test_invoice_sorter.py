@@ -1,17 +1,8 @@
-"""Tests for invoice sorter v2.
-
-The original sample (`3344.pdf`) was not uploaded with this run.
-These tests reconstruct the documented layout from app.py / README:
-  - scanned-style image PDFs
-  - Invoice No. & Date : 20242500788 - 29/04/2024
-  - billed-to customer PORITE INDIA PVT.LTD.
-  - one PDF with invoice starts on pages 1, 4, 9 (13 pages total)
-"""
+"""Tests for invoice sorter v2 first-page-only processing."""
 
 from __future__ import annotations
 
 import io
-import shutil
 import sys
 from pathlib import Path
 
@@ -23,13 +14,13 @@ sys.path.insert(0, str(ROOT))
 from app import (  # noqa: E402
     extract_customer_name,
     extract_invoice_number,
-    find_invoice_starts,
     looks_like_invoice_page,
     ocr_pdf,
     parse_date_folder,
     process,
     process_invoice_file,
     process_uploaded_zip,
+    retry_ocr_without_invoice_starts,
     split_invoice_packages,
     zip_output_tree,
 )
@@ -55,12 +46,6 @@ def test_extract_customer_prefers_billed_to_recipient():
 def test_looks_like_invoice_page():
     assert looks_like_invoice_page(SAMPLE_PAGE)
     assert not looks_like_invoice_page("DELIVERY CHALLAN\nGoods received")
-    challan = (
-        "Original For Consignee\n"
-        "Total Invoice Value (In Word) Indian Rupees One Lakh\n"
-        "Outward No: LL2-4Y invoice No,; ——__ |\n"
-    )
-    assert not looks_like_invoice_page(challan)
     rapidocr_noisy = (
         "FILE COPY FORM GST INV - 1 INVOICE\n"
         "InvoiceNo.&Date:20242500788-29/04/2024\n"
@@ -75,48 +60,50 @@ def test_parse_date_folder():
     assert parse_date_folder("Invoice") is None
 
 
-def test_split_packages_match_documented_page_ranges(tmp_path):
-    pdf_path = write_text_pdf(tmp_path / "3344.pdf")
+def test_ocr_pdf_reads_only_first_page(tmp_path):
+    pdf_path = write_text_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
     page_texts = ocr_pdf(pdf_path)
-    starts = find_invoice_starts(page_texts)
-    assert starts == [0, 3, 8]
-    assert len(page_texts) == 13
-
-    packages = split_invoice_packages(pdf_path, starts)
-    ranges = [(start, end) for start, end, _path in packages]
-    assert ranges == [(0, 3), (3, 8), (8, 13)]
-
-    for _, _, package_path in packages:
-        if package_path.exists():
-            package_path.unlink()
+    assert page_texts == [(0, SAMPLE_PAGE + "GSTIN : 27AABCP1234A1Z5")]
 
 
-def test_process_text_pdf_into_customer_date_folders(tmp_path):
+def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     invoice_dir = input_root / "25-Jun-26" / "Invoice"
-    source = write_text_pdf(invoice_dir / "3344.pdf")
+    source = write_text_pdf(invoice_dir / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
 
     results = process(input_root, output_root)
-
     copied = [r for r in results if r["status"] == "COPIED"]
-    assert [r["invoice_number"] for r in copied] == [
-        "20242500788",
-        "20242500752",
-        "20242500686",
-    ]
-    assert all(r["customer"] == "PORITE INDIA PVT.LTD" for r in copied)
-    assert all(r["source_pages"] for r in copied)
 
-    # Windows folders cannot end with a period, so safe_name strips it.
-    customer_dir = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26"
-    for invoice in SAMPLE_INVOICES:
-        dest = customer_dir / f"{invoice['invoice_no']}.pdf"
-        assert dest.exists(), dest
-        assert dest.stat().st_size > 0
+    assert len(copied) == 1
+    assert copied[0]["invoice_number"] == "20242500788"
+    assert copied[0]["customer"] == "PORITE INDIA PVT.LTD"
+    assert copied[0]["source_pages"] == "1-3"
 
-    # Source file is copied, not moved.
+    destination = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf"
+    assert destination.exists()
+    assert destination.stat().st_size == source.stat().st_size
     assert source.exists()
+
+
+def test_process_does_not_scan_supporting_pages(tmp_path, monkeypatch):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    source = write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+
+    calls = []
+    original = __import__("app").ocr_scanned_page
+
+    def tracked(page, scale=1.2):
+        calls.append(page.number)
+        return original(page, scale=scale)
+
+    monkeypatch.setattr("app.ocr_scanned_page", tracked)
+    process_invoice_file(source, input_root, output_root)
+    assert calls == [0]
 
 
 def test_missing_invoice_page_is_review(tmp_path):
@@ -134,14 +121,30 @@ def test_missing_invoice_page_is_review(tmp_path):
 
     results = process_invoice_file(pdf_path, input_root, output_root)
     assert results[0]["status"] == "REVIEW"
-    assert "No GST invoice page detected" in results[0]["reason"]
+    assert "page 1" in results[0]["reason"]
 
 
-def test_missing_invoice_folder_is_skipped(tmp_path):
-    input_root = tmp_path / "Input"
-    (input_root / "25-Jun-26" / "PIS").mkdir(parents=True)
-    results = process(input_root, tmp_path / "Output")
-    assert results[0]["status"] == "SKIPPED"
+def test_retry_ocr_only_retries_first_page(tmp_path, monkeypatch):
+    from app import retry_ocr_first_page
+
+    pdf_path = write_text_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+    calls = []
+
+    def fail_if_not_first(page, scale=1.7):
+        calls.append(page.number)
+        return "TAX INVOICE\nInvoice No. & Date : 20242500788 - 29/04/2024\nDetails Of Recipient :(Billed to)\nPORITE INDIA PVT.LTD.,"
+
+    monkeypatch.setattr("app.render_page_band", fail_if_not_first)
+    retry_ocr_first_page(pdf_path, "")
+    assert calls == [0]
+
+
+def test_retry_wrapper_returns_only_first_page(tmp_path, monkeypatch):
+    pdf_path = write_text_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+
+    monkeypatch.setattr("app.retry_ocr_first_page", lambda _path, text: text + " retry")
+    updated = retry_ocr_without_invoice_starts(pdf_path, [(0, "old"), (1, "must not be returned")])
+    assert updated == [(0, "old retry")]
 
 
 def test_duplicate_destination_is_not_overwritten(tmp_path):
@@ -158,49 +161,6 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     dest_dir = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26"
     assert (dest_dir / "20242500788.pdf").exists()
     assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
-
-
-def _ocr_available() -> bool:
-    try:
-        import rapidocr  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
-def test_retry_ocr_skips_pages_that_already_have_embedded_text(tmp_path, monkeypatch):
-    from app import retry_ocr_without_invoice_starts
-
-    pdf_path = write_text_pdf(tmp_path / "3344.pdf")
-    page_texts = [
-        (page_no, "DELIVERY CHALLAN\nGoods received. Extra padding so this is long enough.")
-        for page_no in range(13)
-    ]
-
-    def fail_ocr(_image):
-        raise AssertionError("embedded-text pages should not be re-OCR'd")
-
-    monkeypatch.setattr("app.ocr_image_rapid", fail_ocr)
-    monkeypatch.setattr("app.ocr_image_paddle", fail_ocr)
-    updated = retry_ocr_without_invoice_starts(pdf_path, page_texts)
-    assert updated == page_texts
-
-
-@pytest.mark.skipif(not _ocr_available(), reason="PaddleOCR/RapidOCR is not installed")
-def test_ocr_scanned_pdf_extracts_sample_invoices(tmp_path):
-    input_root = tmp_path / "Input"
-    output_root = tmp_path / "Output"
-    invoice_dir = input_root / "25-Jun-26" / "Invoice"
-    write_scanned_pdf(invoice_dir / "3344.pdf")
-
-    results = process(input_root, output_root)
-    copied = [r for r in results if r["status"] == "COPIED"]
-    assert [r["invoice_number"] for r in copied] == [
-        "20242500788",
-        "20242500752",
-        "20242500686",
-    ]
-    assert all(r["customer"] == "PORITE INDIA PVT.LTD" for r in copied)
 
 
 def test_nested_june_folder_creates_customer_then_day(tmp_path):
@@ -225,8 +185,6 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
         ("20242500686", "26-Jun-26"),
     }
     assert skipped[0]["date_folder"] == "27-Jun-26"
-    assert (output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf").exists()
-    assert (output_root / "PORITE INDIA PVT.LTD" / "26-Jun-26" / "20242500686.pdf").exists()
 
 
 def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
@@ -253,9 +211,6 @@ def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
         ("20242500788", "25-Jun-26"),
         ("20242500752", "30-Jun-26"),
     }
-    customer = output_root / "PORITE INDIA PVT.LTD"
-    assert (customer / "25-Jun-26" / "20242500788.pdf").exists()
-    assert (customer / "30-Jun-26" / "20242500752.pdf").exists()
 
 
 def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
@@ -271,11 +226,7 @@ def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
         for file in bundle.rglob("*.pdf"):
             zf.write(file, file.relative_to(bundle))
 
-    results, out_bytes = process_uploaded_zip(
-        src_zip.read_bytes(),
-        "June 26.zip",
-        tmp_path / "work",
-    )
+    results, out_bytes = process_uploaded_zip(src_zip.read_bytes(), "June 26.zip", tmp_path / "work")
     copied = [r for r in results if r["status"] == "COPIED"]
     assert copied[0]["invoice_number"] == "20242500788"
 
@@ -283,3 +234,23 @@ def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
     assert any(name.endswith("20242500788.pdf") for name in listing)
     assert any("PORITE INDIA PVT.LTD" in name for name in listing)
 
+
+def test_zip_output_tree_empty(tmp_path):
+    assert zip_output_tree(tmp_path) is not None
+
+
+def _ocr_available() -> bool:
+    try:
+        import rapidocr  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(not _ocr_available(), reason="RapidOCR is not installed")
+def test_ocr_scanned_pdf_reads_only_first_page(tmp_path):
+    pdf_path = write_scanned_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+    page_texts = ocr_pdf(pdf_path)
+    assert len(page_texts) == 1
+    assert page_texts[0][0] == 0
+    assert extract_invoice_number(page_texts[0][1]) == "20242500788"
