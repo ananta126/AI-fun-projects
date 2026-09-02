@@ -83,11 +83,11 @@ The printed GST **Invoice No.** (for example `20242500788`) is taken from the pa
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-
-pip install -r requirements.txt
-
-streamlit run app.py
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
+
+If Windows says `'streamlit' is not recognized`, keep using `python -m streamlit run app.py` (not `streamlit run app.py`). Or double-click `run.bat`.
 
 ## Tests
 
