@@ -54,8 +54,26 @@ def test_extract_customer_skips_street_number_182():
         "Consignee (Shipped to) :\n"
         "182, SHIROLI MIDC KOLHAPUR\n"
     )
-    assert extract_customer_name(page) == "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)"
+    assert extract_customer_name(page) == "RAPID MACHINING TECHNOLOGIES PVT LTD"
     assert extract_customer_name(page) != "182"
+
+
+def test_same_customer_collapses_kolhapur_folder_variants():
+    from app import canonicalize_customer_name
+
+    expected = "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    variants = [
+        "RAPID MACHINING TECHNOLOGIES PVT LTD",
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)",
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR], RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)",
+    ]
+    assert [canonicalize_customer_name(name) for name in variants] == [expected] * 3
+    glued = (
+        "Details Of Recipient :(Billed to)\n"
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR], "
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)\n"
+    )
+    assert extract_customer_name(glued) == expected
 
 
 def test_looks_like_invoice_page():

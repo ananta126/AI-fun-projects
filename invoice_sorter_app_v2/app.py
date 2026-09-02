@@ -271,20 +271,32 @@ def extract_customer_name(text: str):
     regions.append(text)
 
     company = re.compile(
-        r"([A-Z][A-Z0-9 .&()'/-]*?(?:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP)"
-        r"(?:\s*\([^)]+\))?)",
+        r"([A-Z][A-Z0-9 .&'/-]*?(?:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP)\.?)",
         re.I,
     )
     for region in regions:
         for match in company.finditer(region):
-            name = _clean_customer_name(match.group(1))
+            name = canonicalize_customer_name(match.group(1))
             if _usable_customer_name(name) and not re.search(r"HIGHTEMP", name, re.I):
                 return name
 
     match = re.search(r"(PORITE\s*INDIA\s*PVT\.?\s*LTD\.?)", text, flags=re.I)
     if match:
-        return "PORITE INDIA PVT.LTD."
+        return canonicalize_customer_name("PORITE INDIA PVT.LTD.")
     return None
+
+
+def canonicalize_customer_name(name: str) -> str:
+    """One legal name: drop plant names, OCR junk, and billed/shipped duplicates."""
+    name = _clean_customer_name(name).replace("]", ")")
+    legal = re.search(
+        r"(.+?(?:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP)\.?)",
+        name,
+        flags=re.I,
+    )
+    if legal:
+        name = legal.group(1)
+    return _clean_customer_name(name)
 
 
 def _clean_customer_name(name: str) -> str:
