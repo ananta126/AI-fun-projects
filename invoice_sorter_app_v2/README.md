@@ -62,7 +62,7 @@ Share `http://YOUR-PC-IP:8501`. Keep the PC on while they use it. This is only f
 
 ### Option B — Streamlit Community Cloud (public URL)
 
-Deploy `invoice_sorter_app_v2/app.py` from GitHub. OCR uses RapidOCR (ONNX) from `requirements.txt`, so no apt Tesseract packages are required.
+Deploy `invoice_sorter_app_v2/app.py` from GitHub. OCR uses **PaddleOCR** from `requirements.txt`. First run downloads PP-OCR models.
 
 The client then only needs the Streamlit URL. Invoice PDFs will pass through that host, so use a private app if the documents are confidential.
 
@@ -74,9 +74,9 @@ Do not email a Python installer unless they have IT support. OCR models come fro
 
 ## Windows / local OCR
 
-Scanned PDFs are read with **RapidOCR** (PP-OCRv6 via ONNX Runtime). It is installed with pip. You do **not** need Tesseract.
+Scanned PDFs are read with **PaddleOCR** (PP-OCRv6). It is installed with pip (`paddlepaddle` + `paddleocr`). The first run downloads model files into a local cache. After that, OCR stays on the PC.
 
-First run may download small model files. After that, OCR stays local and is typically faster than Tesseract on CPU.
+The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
 ## Install and run
 
@@ -99,7 +99,7 @@ pip install -r requirements.txt
 pytest tests -q
 ```
 
-OCR tests need `rapidocr` and `onnxruntime` (already in requirements.txt).
+OCR tests need `paddleocr` and `paddlepaddle` (already in requirements.txt).
 
 ## Important
 

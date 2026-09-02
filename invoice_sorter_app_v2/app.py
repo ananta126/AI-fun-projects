@@ -22,6 +22,8 @@ OCR_SCALE = 2.0
 _OUTPUT_LOCK = threading.Lock()
 _OCR_LOCK = threading.Lock()
 _OCR_ENGINE = None
+os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
 
 def worker_count():
@@ -33,26 +35,53 @@ def worker_count():
 
 
 def get_ocr_engine():
-    """Lazy RapidOCR (PP-OCRv6 via ONNX Runtime). Faster than Tesseract on CPU."""
+    """Lazy PaddleOCR (PP-OCRv6). Used to read printed GST invoice numbers."""
     global _OCR_ENGINE
     if _OCR_ENGINE is None:
         with _OCR_LOCK:
             if _OCR_ENGINE is None:
-                from rapidocr import RapidOCR
+                os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
+                os.environ.setdefault("FLAGS_use_mkldnn", "0")
+                from paddleocr import PaddleOCR
 
-                _OCR_ENGINE = RapidOCR(
-                    params={"EngineConfig.onnxruntime.use_cuda": False}
+                _OCR_ENGINE = PaddleOCR(
+                    lang="en",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
                 )
     return _OCR_ENGINE
+
+
+def _paddle_result_to_text(result) -> str:
+    if not result:
+        return ""
+    first = result[0] if isinstance(result, list) else result
+    rec_texts = None
+    if hasattr(first, "get"):
+        rec_texts = first.get("rec_texts")
+    if rec_texts is None:
+        rec_texts = getattr(first, "rec_texts", None)
+    if rec_texts:
+        return "\n".join(str(t) for t in rec_texts)
+    # PaddleOCR 2.x: [[[box, (text, score)], ...]]
+    lines = result[0] if isinstance(result, list) and result else []
+    texts = []
+    for item in lines or []:
+        if item and len(item) >= 2 and item[1]:
+            texts.append(str(item[1][0]))
+    return "\n".join(texts)
 
 
 def ocr_image(image: Image.Image) -> str:
     array = np.asarray(image.convert("RGB"))
     engine = get_ocr_engine()
     with _OCR_LOCK:
-        result = engine(array)
-    txts = getattr(result, "txts", None) or ()
-    return "\n".join(txts)
+        if hasattr(engine, "predict"):
+            result = engine.predict(array)
+        else:
+            result = engine.ocr(array, cls=True)
+    return _paddle_result_to_text(result)
 
 
 def safe_name(value: str) -> str:
@@ -79,7 +108,7 @@ def render_page(page, scale=OCR_SCALE):
 
 def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
     """
-    OCR scanned pages with RapidOCR. Embedded text is used when present.
+    OCR scanned pages with PaddleOCR. Embedded text is used when present.
     """
     doc = fitz.open(pdf_path)
     output = []
@@ -109,7 +138,7 @@ def extract_invoice_number(text: str):
     Based on the supplied sample, invoice number appears like:
     'Invoice No. & Date : 20242500788 - 29/04/2024'
 
-    RapidOCR often drops spaces and reads I/l incorrectly.
+    RapidOCR/PaddleOCR often drop spaces and misread I/l.
     """
     text = normalize_ocr_text(text)
     patterns = [
@@ -174,7 +203,7 @@ def looks_like_invoice_page(text: str):
         return False
     if invoice_no:
         return True
-    # RapidOCR sometimes misses "Invoice No" but still sees the GST invoice header.
+    # OCR sometimes misses "Invoice No" but still sees the GST invoice header.
     if gst_form and tax_invoice:
         return True
     return False
@@ -455,7 +484,7 @@ def render_ui():
             - Accepts a zip in the browser (no install for the client)
             - Or a local zip/folder on this computer
             - Finds nested `DD-MMM-YY` day folders
-            - OCRs scanned PDFs with RapidOCR (no Tesseract install)
+            - OCRs scanned PDFs with PaddleOCR to read GST invoice numbers
             - Creates a folder named after the customer
             - Sorts invoices into that day's subfolder
             - Splits multi-invoice PDFs
@@ -505,7 +534,7 @@ def render_ui():
             )
 
     with local_tab:
-        st.caption("Use this on a PC with Python. OCR models install with pip (no Tesseract).")
+        st.caption("Use this on a PC with Python. PaddleOCR installs with pip (first run downloads models).")
         input_dir = st.text_input(
             "Input zip or folder",
             placeholder=r"C:\Users\Ananta3011\Downloads\June 26-20260831T053601Z-001.zip",
