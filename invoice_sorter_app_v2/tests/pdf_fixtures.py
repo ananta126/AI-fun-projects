@@ -1,4 +1,4 @@
-"""Build sample PDFs that match the documented 3344.pdf invoice family."""
+"""Build sample PDFs: one invoice per file, with supporting pages after page 1."""
 
 from __future__ import annotations
 

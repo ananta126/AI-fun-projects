@@ -110,7 +110,7 @@ If Windows says `'streamlit' is not recognized`, keep using `python -m streamlit
 ## Tests
 
 The original sample PDF (`3344.pdf`) is a local file and is not in this repo.
-Tests reconstruct that 13-page layout (invoice starts on pages 1, 4, and 9).
+Tests use one invoice PDF with supporting pages attached; only page 1 is read.
 
 ```bash
 pip install -r requirements.txt

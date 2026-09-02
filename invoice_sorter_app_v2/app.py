@@ -296,31 +296,6 @@ def looks_like_invoice_page(text: str):
     return bool(gst_form and tax_invoice)
 
 
-def find_invoice_starts(page_texts):
-    return [page_no for page_no, text in page_texts if looks_like_invoice_page(text)]
-
-
-def split_invoice_packages(pdf_path: Path, invoice_starts):
-    """Legacy helper retained for compatibility; not used by processing anymore."""
-    from pypdf import PdfReader, PdfWriter
-
-    reader = PdfReader(str(pdf_path))
-    starts = sorted(set(invoice_starts))
-    packages = []
-    for idx, start in enumerate(starts):
-        end = starts[idx + 1] if idx + 1 < len(starts) else len(reader.pages)
-        writer = PdfWriter()
-        for page_no in range(start, end):
-            writer.add_page(reader.pages[page_no])
-        temp_path = Path(tempfile.gettempdir()) / (
-            f".invoice_package_{os.getpid()}_{threading.get_ident()}_{idx + 1}.pdf"
-        )
-        with open(temp_path, "wb") as f:
-            writer.write(f)
-        packages.append((start, end, temp_path))
-    return packages
-
-
 def date_folder_name_for(path: Path, root: Path) -> str:
     for parent in [path, *path.parents]:
         if DATE_FOLDER_RE.match(parent.name):
