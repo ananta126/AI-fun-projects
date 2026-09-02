@@ -21,7 +21,6 @@ from app import (  # noqa: E402
     process_invoice_file,
     process_uploaded_zip,
     retry_ocr_without_invoice_starts,
-    split_invoice_packages,
     zip_output_tree,
 )
 from tests.pdf_fixtures import SAMPLE_INVOICES, write_scanned_pdf, write_text_pdf  # noqa: E402
@@ -89,7 +88,7 @@ def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
 def test_process_does_not_scan_supporting_pages(tmp_path, monkeypatch):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
-    source = write_text_pdf(
+    source = write_scanned_pdf(
         input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
@@ -124,17 +123,26 @@ def test_missing_invoice_page_is_review(tmp_path):
     assert "page 1" in results[0]["reason"]
 
 
+def test_missing_invoice_folder_is_skipped(tmp_path):
+    input_root = tmp_path / "Input"
+    (input_root / "25-Jun-26" / "PIS").mkdir(parents=True)
+    results = process(input_root, tmp_path / "Output")
+    assert results[0]["status"] == "SKIPPED"
+
+
 def test_retry_ocr_only_retries_first_page(tmp_path, monkeypatch):
+    from PIL import Image
     from app import retry_ocr_first_page
 
-    pdf_path = write_text_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+    pdf_path = write_scanned_pdf(tmp_path / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
     calls = []
 
-    def fail_if_not_first(page, scale=1.7):
+    def only_first_page(page, scale=1.7, fraction=0.55):
         calls.append(page.number)
-        return "TAX INVOICE\nInvoice No. & Date : 20242500788 - 29/04/2024\nDetails Of Recipient :(Billed to)\nPORITE INDIA PVT.LTD.,"
+        return Image.new("RGB", (10, 10), "white")
 
-    monkeypatch.setattr("app.render_page_band", fail_if_not_first)
+    monkeypatch.setattr("app.render_page_band", only_first_page)
+    monkeypatch.setattr("app.ocr_image_rapid", lambda _image: SAMPLE_PAGE)
     retry_ocr_first_page(pdf_path, "")
     assert calls == [0]
 
@@ -185,6 +193,8 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
         ("20242500686", "26-Jun-26"),
     }
     assert skipped[0]["date_folder"] == "27-Jun-26"
+    assert (output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (output_root / "PORITE INDIA PVT.LTD" / "26-Jun-26" / "20242500686.pdf").exists()
 
 
 def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):

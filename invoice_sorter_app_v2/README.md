@@ -1,22 +1,14 @@
 
 # Invoice Sorter v2
 
-This version was designed after inspecting the supplied 13-page sample invoice PDF.
+This version was designed after inspecting the supplied scanned invoice PDFs.
 
-The sample is a scanned/image PDF, so normal PDF text extraction returns no text.
+The files are image PDFs, so normal PDF text extraction returns no text.
 The app therefore uses OCR.
 
-The sample also contains multiple invoice packages in one PDF:
-- invoice starts on page 1
-- invoice starts on page 4
-- invoice starts on page 9
-
-The app detects invoice pages and splits the source PDF into:
-- pages 1-3
-- pages 4-8
-- pages 9-13
-
-Each package keeps its supporting pages.
+Each source PDF is treated as **one complete invoice package**. Only **page 1**
+is read (GST header). The rest of the pages are copied with the file and are
+not OCR'd. The app does not split multi-invoice PDFs.
 
 ## Output logic
 
@@ -100,7 +92,7 @@ On Python 3.11/3.12 you can also install PaddleOCR:
 python -m pip install -r requirements-paddle.txt
 ```
 
-The app uses **RapidOCR on the page header only**. Delivery challan pages are not fully OCR'd. PaddleOCR is off unless you set `INVOICE_SORTER_USE_PADDLE=1`.
+The app uses **RapidOCR on page 1 only** (GST header band). Supporting pages are copied, not scanned. PaddleOCR is off unless you set `INVOICE_SORTER_USE_PADDLE=1`.
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
