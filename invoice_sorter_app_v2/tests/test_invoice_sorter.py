@@ -42,6 +42,22 @@ def test_extract_customer_prefers_billed_to_recipient():
     assert extract_customer_name(SAMPLE_PAGE) == "PORITE INDIA PVT.LTD."
 
 
+def test_extract_customer_skips_street_number_182():
+    page = (
+        "FORM GST INV - 1 INVOICE\n"
+        "HIGHTEMP FURNACES LTD.\n"
+        "Invoice No. & Date : 20222306356 - 11/12/2022\n"
+        "Details Of Recipient :(Billed to)\n"
+        "182, SHIROLI MIDC KOLHAPUR, KOLHAPUR, MAHARASHTRA, INDIA.\n"
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)\n"
+        "GSTIN/Unique ID : 27AAACR8959A1Z9\n"
+        "Consignee (Shipped to) :\n"
+        "182, SHIROLI MIDC KOLHAPUR\n"
+    )
+    assert extract_customer_name(page) == "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)"
+    assert extract_customer_name(page) != "182"
+
+
 def test_looks_like_invoice_page():
     assert looks_like_invoice_page(SAMPLE_PAGE)
     assert not looks_like_invoice_page("DELIVERY CHALLAN\nGoods received")

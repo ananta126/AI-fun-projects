@@ -260,23 +260,47 @@ def extract_invoice_number(text: str):
 
 
 def extract_customer_name(text: str):
-    """Extract the billed-to customer from first-page OCR/text."""
+    """Extract the billed-to company, not a street number from the address."""
     text = normalize_ocr_text(text)
-    patterns = [
-        r"Details\s+Of\s+Recipient\s*:\s*\(Billed\s+to\)\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,}(?:PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP|INC\.?|PRIVATE\s+LIMITED)?)",
-        r"Billed\s+to\s*[:\-]?\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,})",
-        r"Consignee\s*\(Shipped\s+to\)\s*:\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,})",
-    ]
+    billed = re.search(
+        r"(?:Details\s+Of\s+Recipient|Billed\s+to)(.*?)(?:Consignee|GSTIN|Place\s+of\s+Supply|Invoice\s*No|$)",
+        text,
+        flags=re.I | re.S,
+    )
+    regions = [billed.group(1)] if billed else []
+    regions.append(text)
 
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.I)
-        if match:
-            return re.sub(r"\s+", " ", match.group(1)).strip(" ,-")
+    company = re.compile(
+        r"([A-Z][A-Z0-9 .&()'/-]*?(?:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP)"
+        r"(?:\s*\([^)]+\))?)",
+        re.I,
+    )
+    for region in regions:
+        for match in company.finditer(region):
+            name = _clean_customer_name(match.group(1))
+            if _usable_customer_name(name) and not re.search(r"HIGHTEMP", name, re.I):
+                return name
 
     match = re.search(r"(PORITE\s*INDIA\s*PVT\.?\s*LTD\.?)", text, flags=re.I)
     if match:
         return "PORITE INDIA PVT.LTD."
     return None
+
+
+def _clean_customer_name(name: str) -> str:
+    return re.sub(r"\s+", " ", name or "").strip(" ,-")
+
+
+def _usable_customer_name(name: str) -> bool:
+    if not name or len(name) < 4:
+        return False
+    if re.fullmatch(r"\d+", name):
+        return False
+    if re.match(r"^\d+\s*,", name):
+        return False
+    if re.match(r"^(GSTIN|INVOICE|TAX|FORM|FILE\s+COPY)\b", name, re.I):
+        return False
+    return True
 
 
 def looks_like_invoice_page(text: str):
