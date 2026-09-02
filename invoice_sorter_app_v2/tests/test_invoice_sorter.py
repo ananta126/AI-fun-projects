@@ -153,7 +153,16 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
 
 
-@pytest.mark.skipif(shutil.which("tesseract") is None, reason="Tesseract OCR is not installed")
+def _rapidocr_available() -> bool:
+    try:
+        import rapidocr  # noqa: F401
+        import onnxruntime  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(not _rapidocr_available(), reason="RapidOCR is not installed")
 def test_ocr_scanned_pdf_extracts_sample_invoices(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"

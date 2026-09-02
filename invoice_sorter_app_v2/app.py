@@ -11,23 +11,17 @@ from datetime import datetime
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import numpy as np
 import streamlit as st
-import pytesseract
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
-# Windows default install is often missing from PATH.
-_WINDOWS_TESSERACT = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
-if shutil.which("tesseract") is None and _WINDOWS_TESSERACT.is_file():
-    pytesseract.pytesseract.tesseract_cmd = str(_WINDOWS_TESSERACT)
-
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
-OCR_SCALE = 2.5
-OCR_CONFIG = "--psm 6"
-# Stop Tesseract OpenMP from oversubscribing when several workers run.
-os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+OCR_SCALE = 2.0
 _OUTPUT_LOCK = threading.Lock()
+_OCR_LOCK = threading.Lock()
+_OCR_ENGINE = None
 
 
 def worker_count():
@@ -36,6 +30,29 @@ def worker_count():
         return 1
     cpu = os.cpu_count() or 2
     return max(1, min(4, cpu))
+
+
+def get_ocr_engine():
+    """Lazy RapidOCR (PP-OCRv6 via ONNX Runtime). Faster than Tesseract on CPU."""
+    global _OCR_ENGINE
+    if _OCR_ENGINE is None:
+        with _OCR_LOCK:
+            if _OCR_ENGINE is None:
+                from rapidocr import RapidOCR
+
+                _OCR_ENGINE = RapidOCR(
+                    params={"EngineConfig.onnxruntime.use_cuda": False}
+                )
+    return _OCR_ENGINE
+
+
+def ocr_image(image: Image.Image) -> str:
+    array = np.asarray(image.convert("RGB"))
+    engine = get_ocr_engine()
+    with _OCR_LOCK:
+        result = engine(array)
+    txts = getattr(result, "txts", None) or ()
+    return "\n".join(txts)
 
 
 def safe_name(value: str) -> str:
@@ -62,38 +79,20 @@ def render_page(page, scale=OCR_SCALE):
 
 def ocr_pdf(pdf_path: Path):
     """
-    OCR scanned pages. Embedded text is used when present.
-    Pages are rendered on one thread (PyMuPDF is not thread-safe), then
-    Tesseract runs in parallel like database workers on independent rows.
+    OCR scanned pages with RapidOCR. Embedded text is used when present.
     """
     doc = fitz.open(pdf_path)
-    output = [None] * doc.page_count
-    pending = []
+    output = []
 
     for page_no, page in enumerate(doc):
         embedded = page.get_text("text").strip()
         if len(embedded) >= 40:
-            output[page_no] = (page_no, embedded)
+            text = embedded
         else:
-            pending.append((page_no, render_page(page)))
+            text = ocr_image(render_page(page))
+        output.append((page_no, text))
 
     doc.close()
-
-    def _ocr(item):
-        page_no, image = item
-        return page_no, pytesseract.image_to_string(image, config=OCR_CONFIG)
-
-    if pending:
-        workers = min(worker_count(), len(pending))
-        if workers == 1:
-            for item in pending:
-                page_no, text = _ocr(item)
-                output[page_no] = (page_no, text)
-        else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                for page_no, text in pool.map(_ocr, pending):
-                    output[page_no] = (page_no, text)
-
     return output
 
 
@@ -138,9 +137,9 @@ def extract_customer_name(text: str):
             return re.sub(r"\s+", " ", match.group(1)).strip(" ,-")
 
     # Fallback specifically useful for OCR of this invoice family.
-    match = re.search(r"(PORITE\s+INDIA\s+PVT\.?\s*LTD\.?)", text, flags=re.I)
+    match = re.search(r"(PORITE\s*INDIA\s*PVT\.?\s*LTD\.?)", text, flags=re.I)
     if match:
-        return re.sub(r"\s+", " ", match.group(1)).strip()
+        return "PORITE INDIA PVT.LTD."
 
     return None
 
@@ -423,7 +422,7 @@ def render_ui():
             - Accepts a zip in the browser (no install for the client)
             - Or a local zip/folder on this computer
             - Finds nested `DD-MMM-YY` day folders
-            - OCRs scanned PDFs
+            - OCRs scanned PDFs with RapidOCR (no Tesseract install)
             - Creates a folder named after the customer
             - Sorts invoices into that day's subfolder
             - Splits multi-invoice PDFs
@@ -473,7 +472,7 @@ def render_ui():
             )
 
     with local_tab:
-        st.caption("Use this only on a PC that already has Python and Tesseract.")
+        st.caption("Use this on a PC with Python. OCR models install with pip (no Tesseract).")
         input_dir = st.text_input(
             "Input zip or folder",
             placeholder=r"C:\Users\Ananta3011\Downloads\June 26-20260831T053601Z-001.zip",

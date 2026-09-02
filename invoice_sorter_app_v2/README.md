@@ -46,9 +46,9 @@ Nested date folders are found automatically. PIS folders are left untouched.
 
 ## Share with a client (no install on their PC)
 
-The client does **not** need Python or Tesseract. You host the app; they use a browser.
+The client does **not** need Python. You host the app; they use a browser.
 
-1. You start the app on a machine that has Tesseract (your PC, a server, or Streamlit Community Cloud).
+1. You start the app on a machine with Python (`pip install -r requirements.txt`).
 2. Send them the URL.
 3. They open **Client link (upload zip)**, upload `June 26-....zip`, wait for OCR, then download `sorted_invoices.zip`.
 
@@ -62,12 +62,7 @@ Share `http://YOUR-PC-IP:8501`. Keep the PC on while they use it. This is only f
 
 ### Option B — Streamlit Community Cloud (public URL)
 
-Deploy `invoice_sorter_app_v2/app.py` from GitHub. Add a root `packages.txt` containing:
-
-```
-tesseract-ocr
-tesseract-ocr-eng
-```
+Deploy `invoice_sorter_app_v2/app.py` from GitHub. OCR uses RapidOCR (ONNX) from `requirements.txt`, so no apt Tesseract packages are required.
 
 The client then only needs the Streamlit URL. Invoice PDFs will pass through that host, so use a private app if the documents are confidential.
 
@@ -75,20 +70,13 @@ The client then only needs the Streamlit URL. Invoice PDFs will pass through tha
 
 If you cannot host a URL, have the client send the month zip. You run the sorter locally and return `sorted_invoices.zip`. They never install anything.
 
-Do not email a Python installer and ask the client to set up Tesseract unless they have IT support.
+Do not email a Python installer unless they have IT support. OCR models come from pip.
 
-## Windows prerequisite (only for local / this-computer mode)
+## Windows / local OCR
 
+Scanned PDFs are read with **RapidOCR** (PP-OCRv6 via ONNX Runtime). It is installed with pip. You do **not** need Tesseract.
 
-Tesseract OCR must be installed separately.
-
-Install Tesseract OCR for Windows, then make sure `tesseract.exe` is on PATH.
-
-If it is not on PATH, add this near the top of app.py:
-
-```python
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-```
+First run may download small model files. After that, OCR stays local and is typically faster than Tesseract on CPU.
 
 ## Install and run
 
@@ -111,7 +99,7 @@ pip install -r requirements.txt
 pytest tests -q
 ```
 
-OCR tests are skipped unless Tesseract is on PATH.
+OCR tests need `rapidocr` and `onnxruntime` (already in requirements.txt).
 
 ## Important
 
