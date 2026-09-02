@@ -39,7 +39,7 @@ def test_extract_invoice_number_strips_printed_date():
 
 
 def test_extract_customer_prefers_billed_to_recipient():
-    assert extract_customer_name(SAMPLE_PAGE) == "PORITE INDIA PVT.LTD."
+    assert extract_customer_name(SAMPLE_PAGE) == "Porite India Pvt. Ltd."
 
 
 def test_extract_customer_skips_street_number_182():
@@ -54,20 +54,18 @@ def test_extract_customer_skips_street_number_182():
         "Consignee (Shipped to) :\n"
         "182, SHIROLI MIDC KOLHAPUR\n"
     )
-    assert extract_customer_name(page) == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    assert extract_customer_name(page) == "Rapid Machining Tech.Pvt.Ltd."
     assert extract_customer_name(page) != "182"
 
 
 def test_same_customer_collapses_kolhapur_folder_variants():
-    from app import canonicalize_customer_name
-
-    expected = "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    expected = "Rapid Machining Tech.Pvt.Ltd."
     variants = [
         "RAPID MACHINING TECHNOLOGIES PVT LTD",
         "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)",
         "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR], RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)",
     ]
-    assert [canonicalize_customer_name(name) for name in variants] == [expected] * 3
+    assert [extract_customer_name("Details Of Recipient :(Billed to)\n" + name) for name in variants] == [expected] * 3
     glued = (
         "Details Of Recipient :(Billed to)\n"
         "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR], "
@@ -110,10 +108,10 @@ def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
 
     assert len(copied) == 1
     assert copied[0]["invoice_number"] == "20242500788"
-    assert copied[0]["customer"] == "PORITE INDIA PVT.LTD"
+    assert copied[0]["customer"] == "Porite India Pvt. Ltd"
     assert copied[0]["source_pages"] == "1-3"
 
-    destination = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf"
+    destination = output_root / "Porite India Pvt. Ltd" / "25-Jun-26" / "20242500788.pdf"
     assert destination.exists()
     assert destination.stat().st_size == source.stat().st_size
     assert source.exists()
@@ -200,7 +198,7 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
 
     assert first[0]["status"] == "COPIED"
     assert second[0]["status"] == "COPIED"
-    dest_dir = output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26"
+    dest_dir = output_root / "Porite India Pvt. Ltd" / "25-Jun-26"
     assert (dest_dir / "20242500788.pdf").exists()
     assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
 
@@ -227,8 +225,8 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
         ("20242500686", "26-Jun-26"),
     }
     assert skipped[0]["date_folder"] == "27-Jun-26"
-    assert (output_root / "PORITE INDIA PVT.LTD" / "25-Jun-26" / "20242500788.pdf").exists()
-    assert (output_root / "PORITE INDIA PVT.LTD" / "26-Jun-26" / "20242500686.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "26-Jun-26" / "20242500686.pdf").exists()
 
 
 def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
@@ -276,7 +274,7 @@ def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
 
     listing = zipfile.ZipFile(io.BytesIO(out_bytes)).namelist()
     assert any(name.endswith("20242500788.pdf") for name in listing)
-    assert any("PORITE INDIA PVT.LTD" in name for name in listing)
+    assert any("Porite India Pvt. Ltd" in name for name in listing)
 
 
 def test_zip_output_tree_empty(tmp_path):

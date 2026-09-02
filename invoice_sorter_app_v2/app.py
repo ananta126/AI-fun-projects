@@ -259,8 +259,91 @@ def extract_invoice_number(text: str):
     return None
 
 
+_OFFICIAL_CUSTOMERS = None
+_TOKEN_DROP = frozenset({"PVT", "LTD", "LIMITED", "PRIVATE", "LLC", "LLP", "CO"})
+_TOKEN_FOLD = {
+    "TECHNOLOGIES": "TECH",
+    "TECHNOLOGY": "TECH",
+    "ENGINEERING": "ENGG",
+    "ENGINEERS": "ENGG",
+    "MANUFACTURING": "MFG",
+}
+
+
+def load_official_customers():
+    """Billed-to names from the client's Summary.xlsx customer list."""
+    global _OFFICIAL_CUSTOMERS
+    if _OFFICIAL_CUSTOMERS is None:
+        path = Path(__file__).resolve().parent / "customers.txt"
+        names = []
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                name = " ".join(line.replace("\xa0", " ").split()).strip()
+                if name and not name.startswith("#"):
+                    names.append(name)
+        _OFFICIAL_CUSTOMERS = names
+    return _OFFICIAL_CUSTOMERS
+
+
+def customer_tokens(name: str):
+    tokens = []
+    for word in re.findall(r"[A-Za-z0-9]+", (name or "").upper()):
+        word = _TOKEN_FOLD.get(word, word)
+        if word and word not in _TOKEN_DROP:
+            tokens.append(word)
+    return tokens
+
+
+def _tokens_in_order(needle, haystack):
+    index = 0
+    for token in haystack:
+        if index < len(needle) and token == needle[index]:
+            index += 1
+    return index == len(needle)
+
+
+def match_official_customer(text: str):
+    """Map billed-to OCR text onto the official customer list."""
+    text = normalize_ocr_text(text)
+    billed = re.search(
+        r"(?:Details\s+Of\s+Recipient|Billed\s+to)(.*?)(?:Consignee|GSTIN|Place\s+of\s+Supply|Invoice\s*No|$)",
+        text,
+        flags=re.I | re.S,
+    )
+    regions = []
+    if billed:
+        regions.append(billed.group(1))
+    regions.append(text)
+
+    customers = load_official_customers()
+    for region in regions:
+        hay = customer_tokens(region)
+        compact = "".join(hay)
+        best = None
+        for name in customers:
+            needle = customer_tokens(name)
+            if not needle:
+                continue
+            if len(needle) == 1:
+                matched = needle[0] in hay
+            else:
+                matched = _tokens_in_order(needle, hay) or ("".join(needle) in compact)
+            if not matched:
+                continue
+            score = (len(needle), len(name))
+            if best is None or score > best[0]:
+                best = (score, name)
+        if best:
+            return best[1]
+    return None
+
+
 def extract_customer_name(text: str):
-    """Extract the billed-to company, not a street number from the address."""
+    """Billed-to customer, using the official list when OCR matches it."""
+    official = match_official_customer(text)
+    if official:
+        return official
+
     text = normalize_ocr_text(text)
     billed = re.search(
         r"(?:Details\s+Of\s+Recipient|Billed\s+to)(.*?)(?:Consignee|GSTIN|Place\s+of\s+Supply|Invoice\s*No|$)",
@@ -539,7 +622,7 @@ def render_ui():
             - Finds nested `DD-MMM-YY` day folders
             - Reads ONLY page 1 of each invoice PDF
             - OCRs only the GST header when page 1 has no usable text
-            - Creates a folder named after the customer
+            - Creates a folder from the billed-to name in customers.txt
             - Sorts the complete source PDF into that day's subfolder
             - Flags uncertain files
             """
@@ -622,7 +705,7 @@ June 26-....zip
         st.code(
             r"""
 Output/
-└── PORITE INDIA PVT.LTD/
+└── Porite India Pvt. Ltd/
     ├── 25-Jun-26/
     │   ├── 20242500788.pdf
     │   └── 20242500752.pdf
