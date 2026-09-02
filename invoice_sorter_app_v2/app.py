@@ -1,4 +1,3 @@
-
 import io
 import os
 import re
@@ -14,7 +13,6 @@ import fitz  # PyMuPDF
 import numpy as np
 import streamlit as st
 from PIL import Image
-from pypdf import PdfReader, PdfWriter
 
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
@@ -41,11 +39,11 @@ def worker_count():
 
 
 def paddle_retry_enabled():
-    return os.environ.get("INVOICE_SORTER_USE_PADDLE", "").strip() in {"1", "true", "yes"}
+    return os.environ.get("INVOICE_SORTER_USE_PADDLE", "").strip().lower() in {"1", "true", "yes"}
 
 
 def get_rapid_engine():
-    """Fast ONNX OCR. One engine per thread so files can be read in parallel."""
+    """Fast ONNX OCR. One engine per thread so PDFs can be processed in parallel."""
     engine = getattr(_RAPID_LOCAL, "engine", None)
     if engine is None:
         from rapidocr import RapidOCR
@@ -65,7 +63,7 @@ def get_rapid_engine():
 
 
 def get_paddle_engine():
-    """Slower CPU OCR. Used only when RapidOCR cannot find a GST invoice page."""
+    """Slower CPU OCR used only for the first-page retry when explicitly enabled."""
     global _PADDLE_ENGINE
     if _PADDLE_ENGINE is False:
         return None
@@ -150,13 +148,8 @@ def parse_date_folder(folder_name: str):
     return None
 
 
-def render_page(page, scale=OCR_SCALE):
-    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    return image
-
-
 def render_page_band(page, scale=OCR_SCALE, fraction=HEADER_FRACTION):
+    """Render only the invoice header band needed for identification."""
     rect = page.rect
     clip = fitz.Rect(0, 0, rect.width, max(1, rect.height * fraction))
     pix = page.get_pixmap(
@@ -168,57 +161,72 @@ def render_page_band(page, scale=OCR_SCALE, fraction=HEADER_FRACTION):
 
 
 def ocr_scanned_page(page, scale: float = OCR_SCALE) -> str:
-    """Read only the GST header band. Delivery pages are not fully OCR'd."""
+    """OCR only the GST header band of the supplied page."""
     return ocr_image_rapid(render_page_band(page, scale=scale, fraction=HEADER_FRACTION))
 
 
-def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
-    """
-    OCR scanned pages with RapidOCR. Embedded text is used when present.
+def ocr_first_page(pdf_path: Path, scale: float = OCR_SCALE):
+    """Read embedded text or OCR ONLY page 1 of a source PDF.
+
+    Every source PDF is one complete invoice package. The remaining pages are
+    supporting documents and are never rendered/OCR'd.
     """
     doc = fitz.open(pdf_path)
-    output = []
+    if len(doc) == 0:
+        doc.close()
+        return "", 0
 
-    for page_no, page in enumerate(doc):
-        embedded = page.get_text("text").strip()
-        if len(embedded) >= 40:
-            text = embedded
-        else:
-            text = ocr_scanned_page(page, scale=scale)
-        output.append((page_no, text))
-
+    page = doc[0]
+    embedded = page.get_text("text").strip()
+    if len(embedded) >= 40:
+        text = embedded
+    else:
+        text = ocr_scanned_page(page, scale=scale)
+    page_count = len(doc)
     doc.close()
-    return output
+    return text, page_count
+
+
+def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
+    """Backward-compatible name: now reads ONLY the first page."""
+    text, _page_count = ocr_first_page(pdf_path, scale=scale)
+    return [(0, text)]
+
+
+def retry_ocr_first_page(pdf_path: Path, first_page_text: str):
+    """Retry OCR at higher resolution, but still ONLY on page 1."""
+    doc = fitz.open(pdf_path)
+    if len(doc) == 0:
+        doc.close()
+        return first_page_text
+
+    page = doc[0]
+    embedded = page.get_text("text").strip()
+    # If real embedded text exists, don't waste time OCR'ing it again.
+    if len(embedded) >= 40:
+        doc.close()
+        return first_page_text
+
+    image = render_page_band(
+        page,
+        scale=OCR_RETRY_SCALE,
+        fraction=HEADER_TALL_FRACTION,
+    )
+    retried = ocr_image_rapid(image)
+    if paddle_retry_enabled() and not extract_invoice_number(retried):
+        paddle_text = ocr_image_paddle(image)
+        if paddle_text:
+            retried = paddle_text
+    doc.close()
+    return retried
 
 
 def retry_ocr_without_invoice_starts(pdf_path: Path, page_texts):
-    """
-    Higher-resolution header RapidOCR only. Paddle is off unless
-    INVOICE_SORTER_USE_PADDLE=1, because it re-reads every page on CPU.
-    """
-    doc = fitz.open(pdf_path)
-    updated = list(page_texts)
-    use_paddle = paddle_retry_enabled()
-    for index, (page_no, text) in enumerate(page_texts):
-        if extract_invoice_number(text) or looks_like_invoice_page(text):
-            continue
-        if len((text or "").strip()) >= 40 and "\n" in (text or ""):
-            embedded = doc[page_no].get_text("text").strip()
-            if len(embedded) >= 40:
-                continue
-        image = render_page_band(
-            doc[page_no],
-            scale=OCR_RETRY_SCALE,
-            fraction=HEADER_TALL_FRACTION,
-        )
-        retried = ocr_image_rapid(image)
-        if use_paddle and not extract_invoice_number(retried):
-            paddle_text = ocr_image_paddle(image)
-            if paddle_text:
-                retried = paddle_text
-        updated[index] = (page_no, retried)
-    doc.close()
-    return updated
+    """Backward-compatible wrapper; retries only the first page."""
+    if not page_texts:
+        return []
+    page_no, text = page_texts[0]
+    return [(page_no, retry_ocr_first_page(pdf_path, text))]
 
 
 def normalize_ocr_text(text: str) -> str:
@@ -230,12 +238,7 @@ def normalize_ocr_text(text: str) -> str:
 
 
 def extract_invoice_number(text: str):
-    """
-    Based on the supplied sample, invoice number appears like:
-    'Invoice No. & Date : 20242500788 - 29/04/2024'
-
-    RapidOCR/PaddleOCR often drop spaces and misread I/l.
-    """
+    """Extract the printed invoice number from first-page OCR/text."""
     text = normalize_ocr_text(text)
     patterns = [
         r"Invoice\s*No\.?\s*(?:&\s*Date)?\s*[:\-]?\s*([0-9A-Z][0-9A-Z./_-]{5,})",
@@ -253,18 +256,11 @@ def extract_invoice_number(text: str):
             if re.fullmatch(r"\d{4,}", invoice_no) and len(invoice_no) < 8:
                 continue
             return invoice_no
-
     return None
 
 
 def extract_customer_name(text: str):
-    """
-    The supplied sample has:
-      Details Of Recipient :(Billed to)
-      PORITE INDIA PVT.LTD.,
-
-    We prefer the billed-to customer over the supplier name.
-    """
+    """Extract the billed-to customer from first-page OCR/text."""
     text = normalize_ocr_text(text)
     patterns = [
         r"Details\s+Of\s+Recipient\s*:\s*\(Billed\s+to\)\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,}(?:PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP|INC\.?|PRIVATE\s+LIMITED)?)",
@@ -277,11 +273,9 @@ def extract_customer_name(text: str):
         if match:
             return re.sub(r"\s+", " ", match.group(1)).strip(" ,-")
 
-    # Fallback specifically useful for OCR of this invoice family.
     match = re.search(r"(PORITE\s*INDIA\s*PVT\.?\s*LTD\.?)", text, flags=re.I)
     if match:
         return "PORITE INDIA PVT.LTD."
-
     return None
 
 
@@ -299,10 +293,7 @@ def looks_like_invoice_page(text: str):
         return False
     if invoice_no:
         return True
-    # OCR sometimes misses "Invoice No" but still sees the GST invoice header.
-    if gst_form and tax_invoice:
-        return True
-    return False
+    return bool(gst_form and tax_invoice)
 
 
 def find_invoice_starts(page_texts):
@@ -310,115 +301,24 @@ def find_invoice_starts(page_texts):
 
 
 def split_invoice_packages(pdf_path: Path, invoice_starts):
-    """
-    If one source PDF contains multiple invoices, split it into packages.
+    """Legacy helper retained for compatibility; not used by processing anymore."""
+    from pypdf import PdfReader, PdfWriter
 
-    Example from the supplied sample:
-      invoice starts on pages 1, 4, 9
-    so packages become:
-      pages 1-3
-      pages 4-8
-      pages 9-13
-
-    Each package retains its supporting delivery-challan/receipt pages.
-    """
     reader = PdfReader(str(pdf_path))
     starts = sorted(set(invoice_starts))
     packages = []
-
     for idx, start in enumerate(starts):
         end = starts[idx + 1] if idx + 1 < len(starts) else len(reader.pages)
-
         writer = PdfWriter()
         for page_no in range(start, end):
             writer.add_page(reader.pages[page_no])
-
         temp_path = Path(tempfile.gettempdir()) / (
             f".invoice_package_{os.getpid()}_{threading.get_ident()}_{idx + 1}.pdf"
         )
         with open(temp_path, "wb") as f:
             writer.write(f)
-
         packages.append((start, end, temp_path))
-
     return packages
-
-
-def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
-    page_texts = ocr_pdf(source_pdf)
-    invoice_starts = find_invoice_starts(page_texts)
-    if not invoice_starts:
-        page_texts = retry_ocr_without_invoice_starts(source_pdf, page_texts)
-        invoice_starts = find_invoice_starts(page_texts)
-
-    if not invoice_starts:
-        return [{
-            "status": "REVIEW",
-            "source_file": str(source_pdf.relative_to(root)),
-            "invoice_number": "",
-            "customer": "",
-            "reason": (
-                "No GST invoice page detected. "
-                f"{source_pdf.name} is the scanner file name, not the printed "
-                "Invoice No. (example: 20242500788)."
-            ),
-        }]
-
-    packages = split_invoice_packages(source_pdf, invoice_starts)
-    results = []
-
-    date_folder = date_folder_name_for(source_pdf, root)
-
-    for start, end, package_path in packages:
-        first_page_text = page_texts[start][1]
-
-        invoice_no = extract_invoice_number(first_page_text)
-        customer = extract_customer_name(first_page_text)
-
-        try:
-            if not invoice_no or not customer:
-                results.append({
-                    "status": "REVIEW",
-                    "source_file": str(source_pdf.relative_to(root)),
-                    "source_pages": f"{start + 1}-{end}",
-                    "invoice_number": invoice_no or "",
-                    "customer": customer or "",
-                    "date_folder": date_folder,
-                    "reason": "Could not confidently extract invoice number/customer",
-                })
-                continue
-
-            customer = safe_name(customer)
-            invoice_no = safe_name(invoice_no)
-
-            date_folder = date_folder_name_for(source_pdf, root)
-
-            # IMPORTANT:
-            # The date folder comes from the SOURCE folder, not the invoice date.
-            # This preserves the user's original filing date.
-            destination_dir = output_root / customer / date_folder
-            with _OUTPUT_LOCK:
-                destination_dir.mkdir(parents=True, exist_ok=True)
-                destination = destination_dir / f"{invoice_no}.pdf"
-                if destination.exists():
-                    destination = destination_dir / f"{invoice_no}__DUPLICATE.pdf"
-                shutil.copy2(package_path, destination)
-
-            results.append({
-                "status": "COPIED",
-                "source_file": str(source_pdf.relative_to(root)),
-                "source_pages": f"{start + 1}-{end}",
-                "invoice_number": invoice_no,
-                "customer": customer,
-                "date_folder": date_folder,
-                "destination": str(destination),
-                "reason": "",
-            })
-        finally:
-            if package_path.exists():
-                package_path.unlink()
-
-    return results
 
 
 def date_folder_name_for(path: Path, root: Path) -> str:
@@ -428,6 +328,56 @@ def date_folder_name_for(path: Path, root: Path) -> str:
         if parent == root:
             break
     return path.parent.parent.name
+
+
+def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
+    """Identify an invoice from page 1 and copy the COMPLETE source PDF."""
+    first_page_text, page_count = ocr_first_page(source_pdf)
+    invoice_no = extract_invoice_number(first_page_text)
+    customer = extract_customer_name(first_page_text)
+
+    if not invoice_no or not customer:
+        retried_text = retry_ocr_first_page(source_pdf, first_page_text)
+        if retried_text != first_page_text:
+            first_page_text = retried_text
+            invoice_no = extract_invoice_number(first_page_text)
+            customer = extract_customer_name(first_page_text)
+
+    date_folder = date_folder_name_for(source_pdf, root)
+
+    if not invoice_no or not customer:
+        return [{
+            "status": "REVIEW",
+            "source_file": str(source_pdf.relative_to(root)),
+            "source_pages": f"1-{page_count}" if page_count else "",
+            "invoice_number": invoice_no or "",
+            "customer": customer or "",
+            "date_folder": date_folder,
+            "reason": "Could not confidently extract invoice number/customer from page 1",
+        }]
+
+    customer = safe_name(customer)
+    invoice_no = safe_name(invoice_no)
+    destination_dir = output_root / customer / date_folder
+
+    with _OUTPUT_LOCK:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / f"{invoice_no}.pdf"
+        if destination.exists():
+            destination = destination_dir / f"{invoice_no}__DUPLICATE.pdf"
+        # Copy the original package intact. No PDF splitting/re-writing is needed.
+        shutil.copy2(source_pdf, destination)
+
+    return [{
+        "status": "COPIED",
+        "source_file": str(source_pdf.relative_to(root)),
+        "source_pages": f"1-{page_count}" if page_count else "",
+        "invoice_number": invoice_no,
+        "customer": customer,
+        "date_folder": date_folder,
+        "destination": str(destination),
+        "reason": "",
+    }]
 
 
 def find_date_folders(root: Path):
@@ -447,10 +397,8 @@ def invoice_pdfs_in(date_folder: Path):
         if child.is_dir() and child.name.lower() == "invoice":
             invoice_dir = child
             break
-
     if invoice_dir is None:
         return None
-
     return sorted(
         p for p in invoice_dir.rglob("*")
         if p.is_file() and p.suffix.lower() == ".pdf" and not p.name.startswith(".")
@@ -460,14 +408,12 @@ def invoice_pdfs_in(date_folder: Path):
 def extract_zip(archive: Path, dest: Path) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     dest_resolved = dest.resolve()
-
     with zipfile.ZipFile(archive) as zf:
         for info in zf.infolist():
             target = (dest / info.filename).resolve()
             if dest_resolved not in target.parents and target != dest_resolved:
                 raise ValueError(f"Unsafe zip entry: {info.filename}")
         zf.extractall(dest)
-
     return dest
 
 
@@ -490,11 +436,8 @@ def process(root: Path, output_root: Path, progress=None):
     results = []
     jobs = []
 
-    date_folders = find_date_folders(root)
-
-    for date_folder in date_folders:
+    for date_folder in find_date_folders(root):
         pdfs = invoice_pdfs_in(date_folder)
-
         if pdfs is None:
             results.append({
                 "status": "SKIPPED",
@@ -503,7 +446,6 @@ def process(root: Path, output_root: Path, progress=None):
                 "reason": "Invoice folder not found",
             })
             continue
-
         jobs.extend(pdfs)
 
     def _run(pdf):
@@ -529,7 +471,6 @@ def process(root: Path, output_root: Path, progress=None):
                     done += 1
                     if progress:
                         progress(done, total, "")
-
     return results
 
 
@@ -559,29 +500,23 @@ def display_results(results):
     if not results:
         st.warning("No matching date folders / invoice PDFs were found.")
         return
-
     copied = sum(r["status"] == "COPIED" for r in results)
     review = sum(r["status"] == "REVIEW" for r in results)
     skipped = sum(r["status"] == "SKIPPED" for r in results)
-
     c1, c2, c3 = st.columns(3)
     c1.metric("Invoices copied", copied)
     c2.metric("Needs review", review)
     c3.metric("Skipped", skipped)
-
     st.dataframe(results, use_container_width=True)
-
     if review:
         st.warning("Some files need review. Nothing uncertain was silently filed.")
 
 
 def render_ui():
     st.set_page_config(page_title="Invoice Sorter", page_icon="📁", layout="wide")
-
     st.title("📁 Invoice Sorter")
     st.write(
-        "Extract date folders → OCR invoices → create a folder per customer → "
-        "sort that day's invoices under the customer."
+        "Read page 1 → identify invoice/customer → copy the complete PDF into the customer/day folder."
     )
 
     with st.sidebar:
@@ -591,22 +526,19 @@ def render_ui():
             - Accepts a zip in the browser (no install for the client)
             - Or a local zip/folder on this computer
             - Finds nested `DD-MMM-YY` day folders
-            - OCRs only the GST header on each page (RapidOCR)
+            - Reads ONLY page 1 of each invoice PDF
+            - OCRs only the GST header when page 1 has no usable text
             - Creates a folder named after the customer
-            - Sorts invoices into that day's subfolder
-            - Splits multi-invoice PDFs
+            - Sorts the complete source PDF into that day's subfolder
             - Flags uncertain files
             """
         )
 
-    client_tab, local_tab = st.tabs(
-        ["Client link (upload zip)", "This computer"]
-    )
+    client_tab, local_tab = st.tabs(["Client link (upload zip)", "This computer"])
 
     with client_tab:
         st.caption(
-            "The client only needs a browser. They upload the month zip and "
-            "download a zip of customer folders."
+            "The client only needs a browser. They upload the month zip and download a zip of customer folders."
         )
         uploaded = st.file_uploader(
             "Upload invoice zip",
@@ -617,10 +549,10 @@ def render_ui():
             if not uploaded:
                 st.error("Choose a zip file first.")
             else:
-                bar = st.progress(0, text="Starting OCR...")
+                bar = st.progress(0, text="Starting...")
 
                 def on_progress(done, total, name):
-                    label = f"Reading {done} of {total} PDFs"
+                    label = f"Reading page 1: {done} of {total} PDFs"
                     if name:
                         label = f"{label}: {name}"
                     bar.progress(done / total if total else 1.0, text=label)
@@ -648,7 +580,7 @@ def render_ui():
 
     with local_tab:
         st.caption(
-            "Use this on a PC with Python. Only the top of each page is OCR'd. "
+            "Only page 1 is read. The original multi-page PDF is copied intact. "
             "PaddleOCR is off unless you set INVOICE_SORTER_USE_PADDLE=1."
         )
         input_dir = st.text_input(
@@ -684,6 +616,7 @@ Output/
     │   ├── 20242500788.pdf
     │   └── 20242500752.pdf
     ├── 26-Jun-26/
+    │   └── ...
     └── 30-Jun-26/
 """,
             language="text",
@@ -701,10 +634,10 @@ Output/
                 else:
                     output_root = Path(output_dir)
                     output_root.mkdir(parents=True, exist_ok=True)
-                    bar = st.progress(0, text="Starting OCR...")
+                    bar = st.progress(0, text="Starting...")
 
                     def on_progress(done, total, name):
-                        label = f"Reading {done} of {total} PDFs"
+                        label = f"Reading page 1: {done} of {total} PDFs"
                         if name:
                             label = f"{label}: {name}"
                         bar.progress(done / total if total else 1.0, text=label)
