@@ -18,8 +18,10 @@ from pypdf import PdfReader, PdfWriter
 
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
-OCR_SCALE = 1.6
-OCR_RETRY_SCALE = 2.2
+OCR_SCALE = 1.2
+OCR_RETRY_SCALE = 1.7
+HEADER_FRACTION = 0.4
+HEADER_TALL_FRACTION = 0.55
 _OUTPUT_LOCK = threading.Lock()
 _PADDLE_LOCK = threading.Lock()
 _PADDLE_ENGINE = None
@@ -35,7 +37,11 @@ def worker_count():
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return 1
     cpu = os.cpu_count() or 2
-    return max(1, min(4, cpu))
+    return max(1, min(2, cpu))
+
+
+def paddle_retry_enabled():
+    return os.environ.get("INVOICE_SORTER_USE_PADDLE", "").strip() in {"1", "true", "yes"}
 
 
 def get_rapid_engine():
@@ -44,7 +50,16 @@ def get_rapid_engine():
     if engine is None:
         from rapidocr import RapidOCR
 
-        engine = RapidOCR(params={"EngineConfig.onnxruntime.use_cuda": False})
+        engine = RapidOCR(
+            params={
+                "Global.use_cls": False,
+                "Global.max_side_len": 960,
+                "Global.log_level": "error",
+                "EngineConfig.onnxruntime.use_cuda": False,
+                "EngineConfig.onnxruntime.intra_op_num_threads": 2,
+                "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+            }
+        )
         _RAPID_LOCAL.engine = engine
     return engine
 
@@ -141,21 +156,20 @@ def render_page(page, scale=OCR_SCALE):
     return image
 
 
+def render_page_band(page, scale=OCR_SCALE, fraction=HEADER_FRACTION):
+    rect = page.rect
+    clip = fitz.Rect(0, 0, rect.width, max(1, rect.height * fraction))
+    pix = page.get_pixmap(
+        matrix=fitz.Matrix(scale, scale),
+        clip=clip,
+        alpha=False,
+    )
+    return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+
 def ocr_scanned_page(page, scale: float = OCR_SCALE) -> str:
-    """
-    RapidOCR the top of the page first. Invoice number and customer are in the
-    header on these GST scans. Skip the rest of the page when that is enough.
-    """
-    image = render_page(page, scale=scale)
-    header_h = max(1, int(image.height * 0.55))
-    header = image.crop((0, 0, image.width, header_h))
-    header_text = ocr_image_rapid(header)
-    if extract_invoice_number(header_text) and extract_customer_name(header_text):
-        return header_text
-    if re.search(r"DELIVERY\s*CHALLAN|Original\s+For\s+Consignee", header_text, re.I):
-        if not looks_like_invoice_page(header_text):
-            return header_text
-    return header_text + "\n" + ocr_image_rapid(image)
+    """Read only the GST header band. Delivery pages are not fully OCR'd."""
+    return ocr_image_rapid(render_page_band(page, scale=scale, fraction=HEADER_FRACTION))
 
 
 def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
@@ -179,11 +193,12 @@ def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
 
 def retry_ocr_without_invoice_starts(pdf_path: Path, page_texts):
     """
-    Only the slow path: higher-resolution RapidOCR, then Paddle if installed.
-    Does not re-read pages that already have a GST invoice number.
+    Higher-resolution header RapidOCR only. Paddle is off unless
+    INVOICE_SORTER_USE_PADDLE=1, because it re-reads every page on CPU.
     """
     doc = fitz.open(pdf_path)
     updated = list(page_texts)
+    use_paddle = paddle_retry_enabled()
     for index, (page_no, text) in enumerate(page_texts):
         if extract_invoice_number(text) or looks_like_invoice_page(text):
             continue
@@ -191,9 +206,13 @@ def retry_ocr_without_invoice_starts(pdf_path: Path, page_texts):
             embedded = doc[page_no].get_text("text").strip()
             if len(embedded) >= 40:
                 continue
-        image = render_page(doc[page_no], scale=OCR_RETRY_SCALE)
+        image = render_page_band(
+            doc[page_no],
+            scale=OCR_RETRY_SCALE,
+            fraction=HEADER_TALL_FRACTION,
+        )
         retried = ocr_image_rapid(image)
-        if not extract_invoice_number(retried):
+        if use_paddle and not extract_invoice_number(retried):
             paddle_text = ocr_image_paddle(image)
             if paddle_text:
                 retried = paddle_text
@@ -466,7 +485,7 @@ def resolve_input(path: Path) -> Path:
     raise FileNotFoundError(path)
 
 
-def process(root: Path, output_root: Path):
+def process(root: Path, output_root: Path, progress=None):
     root = resolve_input(root)
     results = []
     jobs = []
@@ -490,15 +509,26 @@ def process(root: Path, output_root: Path):
     def _run(pdf):
         return process_invoice_file(pdf, root, output_root)
 
+    total = len(jobs)
     if jobs:
-        workers = min(worker_count(), len(jobs))
+        workers = min(worker_count(), total)
         if workers == 1:
-            for pdf in jobs:
+            for index, pdf in enumerate(jobs, start=1):
+                if progress:
+                    progress(index - 1, total, pdf.name)
                 results.extend(_run(pdf))
+                if progress:
+                    progress(index, total, pdf.name)
         else:
+            done = 0
+            if progress:
+                progress(0, total, jobs[0].name)
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 for file_results in pool.map(_run, jobs):
                     results.extend(file_results)
+                    done += 1
+                    if progress:
+                        progress(done, total, "")
 
     return results
 
@@ -512,7 +542,7 @@ def zip_output_tree(output_root: Path) -> bytes:
     return buffer.getvalue()
 
 
-def process_uploaded_zip(zip_bytes: bytes, filename: str, work_dir: Path):
+def process_uploaded_zip(zip_bytes: bytes, filename: str, work_dir: Path, progress=None):
     safe_zip_name = Path(filename or "invoices.zip").name
     if not safe_zip_name.lower().endswith(".zip"):
         safe_zip_name += ".zip"
@@ -521,7 +551,7 @@ def process_uploaded_zip(zip_bytes: bytes, filename: str, work_dir: Path):
     source.write_bytes(zip_bytes)
     output_root = work_dir / "sorted"
     output_root.mkdir(parents=True, exist_ok=True)
-    results = process(source, output_root)
+    results = process(source, output_root, progress=progress)
     return results, zip_output_tree(output_root)
 
 
@@ -561,7 +591,7 @@ def render_ui():
             - Accepts a zip in the browser (no install for the client)
             - Or a local zip/folder on this computer
             - Finds nested `DD-MMM-YY` day folders
-            - OCRs scanned PDFs with RapidOCR (PaddleOCR only if a page is missed)
+            - OCRs only the GST header on each page (RapidOCR)
             - Creates a folder named after the customer
             - Sorts invoices into that day's subfolder
             - Splits multi-invoice PDFs
@@ -587,15 +617,21 @@ def render_ui():
             if not uploaded:
                 st.error("Choose a zip file first.")
             else:
-                with st.spinner(
-                    "OCR is reading the invoices. Large scanned zips can take several minutes..."
-                ):
-                    with tempfile.TemporaryDirectory() as td:
-                        results, result_zip = process_uploaded_zip(
-                            uploaded.getvalue(),
-                            uploaded.name,
-                            Path(td),
-                        )
+                bar = st.progress(0, text="Starting OCR...")
+
+                def on_progress(done, total, name):
+                    label = f"Reading {done} of {total} PDFs"
+                    if name:
+                        label = f"{label}: {name}"
+                    bar.progress(done / total if total else 1.0, text=label)
+
+                with tempfile.TemporaryDirectory() as td:
+                    results, result_zip = process_uploaded_zip(
+                        uploaded.getvalue(),
+                        uploaded.name,
+                        Path(td),
+                        progress=on_progress,
+                    )
                 st.session_state["last_results"] = results
                 st.session_state["download_zip"] = result_zip
                 st.session_state["download_name"] = "sorted_invoices.zip"
@@ -612,8 +648,8 @@ def render_ui():
 
     with local_tab:
         st.caption(
-            "Use this on a PC with Python. RapidOCR is the fast path. "
-            "PaddleOCR is optional and only used when RapidOCR misses a GST invoice page."
+            "Use this on a PC with Python. Only the top of each page is OCR'd. "
+            "PaddleOCR is off unless you set INVOICE_SORTER_USE_PADDLE=1."
         )
         input_dir = st.text_input(
             "Input zip or folder",
@@ -665,10 +701,15 @@ Output/
                 else:
                     output_root = Path(output_dir)
                     output_root.mkdir(parents=True, exist_ok=True)
-                    with st.spinner(
-                        "OCR is reading the invoices. Scanned PDFs can take a little while..."
-                    ):
-                        results = process(source, output_root)
+                    bar = st.progress(0, text="Starting OCR...")
+
+                    def on_progress(done, total, name):
+                        label = f"Reading {done} of {total} PDFs"
+                        if name:
+                            label = f"{label}: {name}"
+                        bar.progress(done / total if total else 1.0, text=label)
+
+                    results = process(source, output_root, progress=on_progress)
                     display_results(results)
 
 

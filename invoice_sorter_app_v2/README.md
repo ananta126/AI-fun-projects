@@ -100,9 +100,7 @@ On Python 3.11/3.12 you can also install PaddleOCR:
 python -m pip install -r requirements-paddle.txt
 ```
 
-The app uses **RapidOCR first** (faster on CPU). PaddleOCR is only used on pages RapidOCR could not read. A local LLM would be slower than this on a normal PC and would send invoice images to a model.
-
-Do not install `requirements-paddle.txt` unless RapidOCR is missing invoice numbers.
+The app uses **RapidOCR on the page header only**. Delivery challan pages are not fully OCR'd. PaddleOCR is off unless you set `INVOICE_SORTER_USE_PADDLE=1`.
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
