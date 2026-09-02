@@ -22,6 +22,7 @@ OCR_SCALE = 2.0
 _OUTPUT_LOCK = threading.Lock()
 _OCR_LOCK = threading.Lock()
 _OCR_ENGINE = None
+_OCR_BACKEND = None
 os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
@@ -35,22 +36,39 @@ def worker_count():
 
 
 def get_ocr_engine():
-    """Lazy PaddleOCR (PP-OCRv6). Used to read printed GST invoice numbers."""
-    global _OCR_ENGINE
+    """Prefer PaddleOCR; fall back to RapidOCR on Python versions with no Paddle wheel."""
+    global _OCR_ENGINE, _OCR_BACKEND
     if _OCR_ENGINE is None:
         with _OCR_LOCK:
             if _OCR_ENGINE is None:
-                os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
-                os.environ.setdefault("FLAGS_use_mkldnn", "0")
-                from paddleocr import PaddleOCR
-
-                _OCR_ENGINE = PaddleOCR(
-                    lang="en",
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False,
-                )
+                _OCR_ENGINE, _OCR_BACKEND = _create_ocr_engine()
     return _OCR_ENGINE
+
+
+def _create_ocr_engine():
+    os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
+    os.environ.setdefault("FLAGS_use_mkldnn", "0")
+    try:
+        from paddleocr import PaddleOCR
+
+        engine = PaddleOCR(
+            lang="en",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )
+        return engine, "paddle"
+    except Exception:
+        pass
+    try:
+        from rapidocr import RapidOCR
+
+        return RapidOCR(params={"EngineConfig.onnxruntime.use_cuda": False}), "rapid"
+    except Exception as exc:
+        raise RuntimeError(
+            "No OCR engine installed. Use Python 3.11 or 3.12 (not 3.14), then "
+            "run: python -m pip install -r requirements.txt"
+        ) from exc
 
 
 def _paddle_result_to_text(result) -> str:
@@ -64,7 +82,6 @@ def _paddle_result_to_text(result) -> str:
         rec_texts = getattr(first, "rec_texts", None)
     if rec_texts:
         return "\n".join(str(t) for t in rec_texts)
-    # PaddleOCR 2.x: [[[box, (text, score)], ...]]
     lines = result[0] if isinstance(result, list) and result else []
     texts = []
     for item in lines or []:
@@ -77,11 +94,15 @@ def ocr_image(image: Image.Image) -> str:
     array = np.asarray(image.convert("RGB"))
     engine = get_ocr_engine()
     with _OCR_LOCK:
-        if hasattr(engine, "predict"):
-            result = engine.predict(array)
-        else:
-            result = engine.ocr(array, cls=True)
-    return _paddle_result_to_text(result)
+        if _OCR_BACKEND == "paddle":
+            if hasattr(engine, "predict"):
+                result = engine.predict(array)
+            else:
+                result = engine.ocr(array, cls=True)
+            return _paddle_result_to_text(result)
+        result = engine(array)
+    txts = getattr(result, "txts", None) or ()
+    return "\n".join(txts)
 
 
 def safe_name(value: str) -> str:

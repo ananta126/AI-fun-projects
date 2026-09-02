@@ -74,7 +74,21 @@ Do not email a Python installer unless they have IT support. OCR models come fro
 
 ## Windows / local OCR
 
-Scanned PDFs are read with **PaddleOCR** (PP-OCRv6). It is installed with pip (`paddlepaddle` + `paddleocr`). The first run downloads model files into a local cache. After that, OCR stays on the PC.
+Use **Python 3.11 or 3.12**, not 3.14. PaddlePaddle has no 3.14 wheel, and `pip install -r requirements.txt` used to fail before Streamlit installed.
+
+Default install uses **RapidOCR** (works on more Python versions):
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+On Python 3.11/3.12 you can also install PaddleOCR:
+
+```bash
+python -m pip install -r requirements-paddle.txt
+```
+
+The app uses PaddleOCR if it is installed, otherwise RapidOCR.
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
