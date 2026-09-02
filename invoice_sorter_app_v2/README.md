@@ -76,6 +76,18 @@ Do not email a Python installer unless they have IT support. OCR models come fro
 
 Use **Python 3.11 or 3.12**, not 3.14. PaddlePaddle has no 3.14 wheel, and `pip install -r requirements.txt` used to fail before Streamlit installed.
 
+**Do not click the yellow “Download Python” button on python.org.** That always installs the newest release (currently 3.14). Use this 64-bit installer instead:
+
+https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe
+
+You can keep 3.14 installed. After 3.12 is present, always create the venv with:
+
+```bat
+py -3.12 -m venv .venv
+```
+
+`python` on PATH will still be 3.14 if that was installed last. That is expected. Use `py -3.12`, not `python`.
+
 Default install uses **RapidOCR** (works on more Python versions):
 
 ```bash
@@ -94,8 +106,8 @@ The printed GST **Invoice No.** (for example `20242500788`) is taken from the pa
 
 ## Install and run
 
-```bash
-python -m venv .venv
+```bat
+py -3.12 -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
 python -m streamlit run app.py
