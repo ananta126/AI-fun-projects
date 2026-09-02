@@ -18,13 +18,16 @@ from pypdf import PdfReader, PdfWriter
 
 
 DATE_FOLDER_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2}$", re.I)
-OCR_SCALE = 2.0
+OCR_SCALE = 1.6
+OCR_RETRY_SCALE = 2.2
 _OUTPUT_LOCK = threading.Lock()
-_OCR_LOCK = threading.Lock()
-_OCR_ENGINE = None
-_OCR_BACKEND = None
+_PADDLE_LOCK = threading.Lock()
+_PADDLE_ENGINE = None
+_RAPID_LOCAL = threading.local()
 os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 
 def worker_count():
@@ -35,40 +38,42 @@ def worker_count():
     return max(1, min(4, cpu))
 
 
-def get_ocr_engine():
-    """Prefer PaddleOCR; fall back to RapidOCR on Python versions with no Paddle wheel."""
-    global _OCR_ENGINE, _OCR_BACKEND
-    if _OCR_ENGINE is None:
-        with _OCR_LOCK:
-            if _OCR_ENGINE is None:
-                _OCR_ENGINE, _OCR_BACKEND = _create_ocr_engine()
-    return _OCR_ENGINE
-
-
-def _create_ocr_engine():
-    os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
-    os.environ.setdefault("FLAGS_use_mkldnn", "0")
-    try:
-        from paddleocr import PaddleOCR
-
-        engine = PaddleOCR(
-            lang="en",
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-        )
-        return engine, "paddle"
-    except Exception:
-        pass
-    try:
+def get_rapid_engine():
+    """Fast ONNX OCR. One engine per thread so files can be read in parallel."""
+    engine = getattr(_RAPID_LOCAL, "engine", None)
+    if engine is None:
         from rapidocr import RapidOCR
 
-        return RapidOCR(params={"EngineConfig.onnxruntime.use_cuda": False}), "rapid"
-    except Exception as exc:
-        raise RuntimeError(
-            "No OCR engine installed. Use Python 3.11 or 3.12 (not 3.14), then "
-            "run: python -m pip install -r requirements.txt"
-        ) from exc
+        engine = RapidOCR(params={"EngineConfig.onnxruntime.use_cuda": False})
+        _RAPID_LOCAL.engine = engine
+    return engine
+
+
+def get_paddle_engine():
+    """Slower CPU OCR. Used only when RapidOCR cannot find a GST invoice page."""
+    global _PADDLE_ENGINE
+    if _PADDLE_ENGINE is False:
+        return None
+    if _PADDLE_ENGINE is None:
+        with _PADDLE_LOCK:
+            if _PADDLE_ENGINE is None:
+                try:
+                    from paddleocr import PaddleOCR
+
+                    _PADDLE_ENGINE = PaddleOCR(
+                        lang="en",
+                        use_doc_orientation_classify=False,
+                        use_doc_unwarping=False,
+                        use_textline_orientation=False,
+                    )
+                except Exception:
+                    _PADDLE_ENGINE = False
+    return None if _PADDLE_ENGINE is False else _PADDLE_ENGINE
+
+
+def get_ocr_engine():
+    """RapidOCR for the normal path. Kept for tests and fallbacks."""
+    return get_rapid_engine()
 
 
 def _paddle_result_to_text(result) -> str:
@@ -90,19 +95,28 @@ def _paddle_result_to_text(result) -> str:
     return "\n".join(texts)
 
 
-def ocr_image(image: Image.Image) -> str:
+def ocr_image_rapid(image: Image.Image) -> str:
     array = np.asarray(image.convert("RGB"))
-    engine = get_ocr_engine()
-    with _OCR_LOCK:
-        if _OCR_BACKEND == "paddle":
-            if hasattr(engine, "predict"):
-                result = engine.predict(array)
-            else:
-                result = engine.ocr(array, cls=True)
-            return _paddle_result_to_text(result)
-        result = engine(array)
+    result = get_rapid_engine()(array)
     txts = getattr(result, "txts", None) or ()
     return "\n".join(txts)
+
+
+def ocr_image_paddle(image: Image.Image) -> str:
+    engine = get_paddle_engine()
+    if engine is None:
+        return ""
+    array = np.asarray(image.convert("RGB"))
+    with _PADDLE_LOCK:
+        if hasattr(engine, "predict"):
+            result = engine.predict(array)
+        else:
+            result = engine.ocr(array, cls=False)
+        return _paddle_result_to_text(result)
+
+
+def ocr_image(image: Image.Image) -> str:
+    return ocr_image_rapid(image)
 
 
 def safe_name(value: str) -> str:
@@ -127,9 +141,26 @@ def render_page(page, scale=OCR_SCALE):
     return image
 
 
+def ocr_scanned_page(page, scale: float = OCR_SCALE) -> str:
+    """
+    RapidOCR the top of the page first. Invoice number and customer are in the
+    header on these GST scans. Skip the rest of the page when that is enough.
+    """
+    image = render_page(page, scale=scale)
+    header_h = max(1, int(image.height * 0.55))
+    header = image.crop((0, 0, image.width, header_h))
+    header_text = ocr_image_rapid(header)
+    if extract_invoice_number(header_text) and extract_customer_name(header_text):
+        return header_text
+    if re.search(r"DELIVERY\s*CHALLAN|Original\s+For\s+Consignee", header_text, re.I):
+        if not looks_like_invoice_page(header_text):
+            return header_text
+    return header_text + "\n" + ocr_image_rapid(image)
+
+
 def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
     """
-    OCR scanned pages with PaddleOCR. Embedded text is used when present.
+    OCR scanned pages with RapidOCR. Embedded text is used when present.
     """
     doc = fitz.open(pdf_path)
     output = []
@@ -139,11 +170,36 @@ def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
         if len(embedded) >= 40:
             text = embedded
         else:
-            text = ocr_image(render_page(page, scale=scale))
+            text = ocr_scanned_page(page, scale=scale)
         output.append((page_no, text))
 
     doc.close()
     return output
+
+
+def retry_ocr_without_invoice_starts(pdf_path: Path, page_texts):
+    """
+    Only the slow path: higher-resolution RapidOCR, then Paddle if installed.
+    Does not re-read pages that already have a GST invoice number.
+    """
+    doc = fitz.open(pdf_path)
+    updated = list(page_texts)
+    for index, (page_no, text) in enumerate(page_texts):
+        if extract_invoice_number(text) or looks_like_invoice_page(text):
+            continue
+        if len((text or "").strip()) >= 40 and "\n" in (text or ""):
+            embedded = doc[page_no].get_text("text").strip()
+            if len(embedded) >= 40:
+                continue
+        image = render_page(doc[page_no], scale=OCR_RETRY_SCALE)
+        retried = ocr_image_rapid(image)
+        if not extract_invoice_number(retried):
+            paddle_text = ocr_image_paddle(image)
+            if paddle_text:
+                retried = paddle_text
+        updated[index] = (page_no, retried)
+    doc.close()
+    return updated
 
 
 def normalize_ocr_text(text: str) -> str:
@@ -273,7 +329,7 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
     page_texts = ocr_pdf(source_pdf)
     invoice_starts = find_invoice_starts(page_texts)
     if not invoice_starts:
-        page_texts = ocr_pdf(source_pdf, scale=max(OCR_SCALE, 2.8))
+        page_texts = retry_ocr_without_invoice_starts(source_pdf, page_texts)
         invoice_starts = find_invoice_starts(page_texts)
 
     if not invoice_starts:
@@ -505,7 +561,7 @@ def render_ui():
             - Accepts a zip in the browser (no install for the client)
             - Or a local zip/folder on this computer
             - Finds nested `DD-MMM-YY` day folders
-            - OCRs scanned PDFs with PaddleOCR to read GST invoice numbers
+            - OCRs scanned PDFs with RapidOCR (PaddleOCR only if a page is missed)
             - Creates a folder named after the customer
             - Sorts invoices into that day's subfolder
             - Splits multi-invoice PDFs
@@ -555,7 +611,10 @@ def render_ui():
             )
 
     with local_tab:
-        st.caption("Use this on a PC with Python. PaddleOCR installs with pip (first run downloads models).")
+        st.caption(
+            "Use this on a PC with Python. RapidOCR is the fast path. "
+            "PaddleOCR is optional and only used when RapidOCR misses a GST invoice page."
+        )
         input_dir = st.text_input(
             "Input zip or folder",
             placeholder=r"C:\Users\Ananta3011\Downloads\June 26-20260831T053601Z-001.zip",

@@ -100,7 +100,9 @@ On Python 3.11/3.12 you can also install PaddleOCR:
 python -m pip install -r requirements-paddle.txt
 ```
 
-The app uses PaddleOCR if it is installed, otherwise RapidOCR.
+The app uses **RapidOCR first** (faster on CPU). PaddleOCR is only used on pages RapidOCR could not read. A local LLM would be slower than this on a normal PC and would send invoice images to a model.
+
+Do not install `requirements-paddle.txt` unless RapidOCR is missing invoice numbers.
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
@@ -125,7 +127,7 @@ pip install -r requirements.txt
 pytest tests -q
 ```
 
-OCR tests need `paddleocr` and `paddlepaddle` (already in requirements.txt).
+OCR tests need RapidOCR from `requirements.txt`. PaddleOCR is optional.
 
 ## Important
 

@@ -162,15 +162,28 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
 
 def _ocr_available() -> bool:
     try:
-        import paddleocr  # noqa: F401
-        return True
-    except ImportError:
-        pass
-    try:
         import rapidocr  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def test_retry_ocr_skips_pages_that_already_have_embedded_text(tmp_path, monkeypatch):
+    from app import retry_ocr_without_invoice_starts
+
+    pdf_path = write_text_pdf(tmp_path / "3344.pdf")
+    page_texts = [
+        (page_no, "DELIVERY CHALLAN\nGoods received. Extra padding so this is long enough.")
+        for page_no in range(13)
+    ]
+
+    def fail_ocr(_image):
+        raise AssertionError("embedded-text pages should not be re-OCR'd")
+
+    monkeypatch.setattr("app.ocr_image_rapid", fail_ocr)
+    monkeypatch.setattr("app.ocr_image_paddle", fail_ocr)
+    updated = retry_ocr_without_invoice_starts(pdf_path, page_texts)
+    assert updated == page_texts
 
 
 @pytest.mark.skipif(not _ocr_available(), reason="PaddleOCR/RapidOCR is not installed")
