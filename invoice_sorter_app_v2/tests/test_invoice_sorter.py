@@ -61,6 +61,13 @@ def test_looks_like_invoice_page():
         "Outward No: LL2-4Y invoice No,; ——__ |\n"
     )
     assert not looks_like_invoice_page(challan)
+    rapidocr_noisy = (
+        "FILE COPY FORM GST INV - 1 INVOICE\n"
+        "InvoiceNo.&Date:20242500788-29/04/2024\n"
+        "PORITEINDIA PVT.LTD.\n"
+    )
+    assert looks_like_invoice_page(rapidocr_noisy)
+    assert extract_invoice_number(rapidocr_noisy) == "20242500788"
 
 
 def test_parse_date_folder():
@@ -127,7 +134,7 @@ def test_missing_invoice_page_is_review(tmp_path):
 
     results = process_invoice_file(pdf_path, input_root, output_root)
     assert results[0]["status"] == "REVIEW"
-    assert "No invoice page detected" in results[0]["reason"]
+    assert "No GST invoice page detected" in results[0]["reason"]
 
 
 def test_missing_invoice_folder_is_skipped(tmp_path):

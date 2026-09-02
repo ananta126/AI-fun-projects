@@ -77,7 +77,7 @@ def render_page(page, scale=OCR_SCALE):
     return image
 
 
-def ocr_pdf(pdf_path: Path):
+def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
     """
     OCR scanned pages with RapidOCR. Embedded text is used when present.
     """
@@ -89,30 +89,45 @@ def ocr_pdf(pdf_path: Path):
         if len(embedded) >= 40:
             text = embedded
         else:
-            text = ocr_image(render_page(page))
+            text = ocr_image(render_page(page, scale=scale))
         output.append((page_no, text))
 
     doc.close()
     return output
 
 
+def normalize_ocr_text(text: str) -> str:
+    text = (text or "").replace("\u00a0", " ")
+    text = re.sub(r"(?i)lnvoice", "Invoice", text)
+    text = re.sub(r"(?i)InvoiceNo", "Invoice No", text)
+    text = re.sub(r"(?i)Inv\.?\s*No", "Invoice No", text)
+    return text
+
+
 def extract_invoice_number(text: str):
     """
     Based on the supplied sample, invoice number appears like:
     'Invoice No. & Date : 20242500788 - 29/04/2024'
+
+    RapidOCR often drops spaces and reads I/l incorrectly.
     """
+    text = normalize_ocr_text(text)
     patterns = [
         r"Invoice\s*No\.?\s*(?:&\s*Date)?\s*[:\-]?\s*([0-9A-Z][0-9A-Z./_-]{5,})",
         r"Invoice\s*(?:Number|#)\s*[:\-]?\s*([0-9A-Z][0-9A-Z./_-]{5,})",
+        r"Invoice\s*No\.?\s*(?:&\s*Date)?[:\-\s]*?(20\d{9})",
+        r"\b(20\d{9})\b",
     ]
 
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.I)
         if match:
             invoice_no = match.group(1).strip(" .,:;")
-            # Sample format is "20242500788 - 29/04/2024"; keep the number only.
-            invoice_no = re.split(r"\s+[-–]\s+\d{1,2}[/-]", invoice_no, maxsplit=1)[0]
-            return invoice_no.strip(" .,:;")
+            invoice_no = re.split(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}", invoice_no, maxsplit=1)[0]
+            invoice_no = invoice_no.strip(" .,:;")
+            if re.fullmatch(r"\d{4,}", invoice_no) and len(invoice_no) < 8:
+                continue
+            return invoice_no
 
     return None
 
@@ -125,6 +140,7 @@ def extract_customer_name(text: str):
 
     We prefer the billed-to customer over the supplier name.
     """
+    text = normalize_ocr_text(text)
     patterns = [
         r"Details\s+Of\s+Recipient\s*:\s*\(Billed\s+to\)\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,}(?:PVT\.?\s*LTD\.?|LTD\.?|LIMITED|LLP|INC\.?|PRIVATE\s+LIMITED)?)",
         r"Billed\s+to\s*[:\-]?\s*(?:\n|\r\n)+\s*([A-Z0-9][^\n\r,]{2,})",
@@ -145,13 +161,23 @@ def extract_customer_name(text: str):
 
 
 def looks_like_invoice_page(text: str):
-    # Delivery challans in the sample also say "Total Invoice Value" and have a
-    # blank "Invoice No" form field. Require an actual invoice number.
-    if re.search(r"\bINVOICE\b", text, re.I) is None:
+    text = normalize_ocr_text(text)
+    invoice_no = extract_invoice_number(text)
+    gst_form = re.search(r"FORM\s+GST\s+INV", text, re.I) is not None
+    tax_invoice = re.search(r"TAX\s+INVOICE|\bFILE\s+COPY\b", text, re.I) is not None
+    delivery_only = (
+        re.search(r"DELIVERY\s*CHALLAN|Original\s+For\s+Consignee", text, re.I)
+        and not gst_form
+        and not tax_invoice
+    )
+    if delivery_only:
         return False
-    if re.search(r"Invoice\s*No", text, re.I) is None:
-        return False
-    return extract_invoice_number(text) is not None
+    if invoice_no:
+        return True
+    # RapidOCR sometimes misses "Invoice No" but still sees the GST invoice header.
+    if gst_form and tax_invoice:
+        return True
+    return False
 
 
 def find_invoice_starts(page_texts):
@@ -196,6 +222,9 @@ def split_invoice_packages(pdf_path: Path, invoice_starts):
 def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
     page_texts = ocr_pdf(source_pdf)
     invoice_starts = find_invoice_starts(page_texts)
+    if not invoice_starts:
+        page_texts = ocr_pdf(source_pdf, scale=max(OCR_SCALE, 2.8))
+        invoice_starts = find_invoice_starts(page_texts)
 
     if not invoice_starts:
         return [{
@@ -203,7 +232,11 @@ def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
             "source_file": str(source_pdf.relative_to(root)),
             "invoice_number": "",
             "customer": "",
-            "reason": "No invoice page detected",
+            "reason": (
+                "No GST invoice page detected. "
+                f"{source_pdf.name} is the scanner file name, not the printed "
+                "Invoice No. (example: 20242500788)."
+            ),
         }]
 
     packages = split_invoice_packages(source_pdf, invoice_starts)
