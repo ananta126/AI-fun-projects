@@ -38,6 +38,22 @@ def test_extract_invoice_number_strips_printed_date():
     assert extract_invoice_number(SAMPLE_PAGE) == "20242500788"
 
 
+def test_extract_invoice_number_skips_pan_on_same_header_row():
+    page = (
+        "FORM GST INV - 1 INVOICE\n"
+        "HIGHTEMP FURNACES LTD.\n"
+        "CIN : U28991PN1983PLC013045  "
+        "PANNo. : AAACH1727L  "
+        "Invoice No. & Date : AAACH1727L - 11/04/2023\n"
+        "GSTIN No. & GST Range : 27AAACH1727L1ZK - CNWD1\n"
+        "20232400230 - 11/04/2023\n"
+        "Details Of Recipient :(Billed to)\n"
+        "RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)\n"
+    )
+    assert extract_invoice_number(page) == "20232400230"
+    assert extract_invoice_number(page) != "AAACH1727L"
+
+
 def test_extract_customer_prefers_billed_to_recipient():
     assert extract_customer_name(SAMPLE_PAGE) == "Porite India Pvt. Ltd."
 

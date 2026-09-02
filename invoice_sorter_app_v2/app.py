@@ -237,25 +237,52 @@ def normalize_ocr_text(text: str) -> str:
     return text
 
 
+_PAN_RE = re.compile(r"^[A-Z]{5}\d{4}[A-Z]$", re.I)
+_GSTIN_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z0-9]$", re.I)
+
+
+def _plausible_gst_invoice_number(value: str) -> bool:
+    value = (value or "").strip(" .,:;")
+    if not value:
+        return False
+    if _PAN_RE.fullmatch(value) or _GSTIN_RE.fullmatch(value):
+        return False
+    if re.search(r"PAN|GSTIN", value, re.I):
+        return False
+    if re.fullmatch(r"20\d{9}", value):
+        return True
+    if re.fullmatch(r"\d{8,14}", value):
+        return True
+    return False
+
+
 def extract_invoice_number(text: str):
-    """Extract the printed invoice number from first-page OCR/text."""
+    """Extract the printed GST invoice number, not PAN/GSTIN from the same header row."""
     text = normalize_ocr_text(text)
+    labeled = re.search(
+        r"Invoice\s*No\.?\s*(?:&\s*Date)?[\s:\-]*((?:(?!Invoice).){0,160})",
+        text,
+        flags=re.I | re.S,
+    )
+    windows = [labeled.group(1)] if labeled else []
+    windows.append(text)
+
+    for window in windows:
+        match = re.search(r"\b(20\d{9})\b", window)
+        if match:
+            return match.group(1)
+
     patterns = [
         r"Invoice\s*No\.?\s*(?:&\s*Date)?\s*[:\-]?\s*([0-9A-Z][0-9A-Z./_-]{5,})",
         r"Invoice\s*(?:Number|#)\s*[:\-]?\s*([0-9A-Z][0-9A-Z./_-]{5,})",
-        r"Invoice\s*No\.?\s*(?:&\s*Date)?[:\-\s]*?(20\d{9})",
-        r"\b(20\d{9})\b",
     ]
-
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.I)
-        if match:
+        for match in re.finditer(pattern, text, flags=re.I):
             invoice_no = match.group(1).strip(" .,:;")
             invoice_no = re.split(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}", invoice_no, maxsplit=1)[0]
             invoice_no = invoice_no.strip(" .,:;")
-            if re.fullmatch(r"\d{4,}", invoice_no) and len(invoice_no) < 8:
-                continue
-            return invoice_no
+            if _plausible_gst_invoice_number(invoice_no):
+                return invoice_no
     return None
 
 
