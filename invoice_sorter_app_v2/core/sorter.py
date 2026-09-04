@@ -245,7 +245,7 @@ def normalize_ocr_text(text: str) -> str:
 
 _PAN_RE = re.compile(r"^[A-Z]{5}\d{4}[A-Z]$", re.I)
 _GSTIN_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z0-9]$", re.I)
-_PRINTED_DATE_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\b")
+_PRINTED_DATE_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{4}|\d{2})\b")
 
 
 def _plausible_gst_invoice_number(value: str) -> bool:
@@ -324,7 +324,7 @@ def extract_invoice_date(text: str):
 
     for window in windows:
         after_number = re.search(
-            r"\b20\d{9}\b\s*[-–:,]?\s*(\d{1,2}[./-]\d{1,2}[./-](?:\d{2}|\d{4}))",
+            r"\b20\d{9}\b\s*[-–:,]?\s*(\d{1,2}[./-]\d{1,2}[./-](?:\d{4}|\d{2}))",
             window,
         )
         candidates = []
