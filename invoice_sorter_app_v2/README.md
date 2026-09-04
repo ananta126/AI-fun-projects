@@ -10,12 +10,16 @@ Each source PDF is treated as **one complete invoice package**. Only **page 1**
 is read (GST header). The rest of the pages are copied with the file and are
 not OCR'd. The app does not split multi-invoice PDFs.
 
+Engine code lives in `core/sorter.py`. Streamlit UI is `app.py`. The Windows
+desktop UI is `desktop_app.py` / `ui/desktop.py`. Timing helper:
+`python tools/benchmark.py <input> <output>`.
+
 ## Output logic
 
 Source:
 
 Input/
-  25-Jun-26/
+  01-Sep-26/
     Invoice/
       random.pdf
 
@@ -23,11 +27,13 @@ Output:
 
 Output/
   CUSTOMER NAME/
-    25-Jun-26/
-      INVOICE_NUMBER.pdf
+    YYYY/
+      01-Sep-26/
+        INVOICE_NUMBER.pdf
 
-The date folder is taken from the source day folder (`25-Jun-26`), not from
-the invoice date printed inside the PDF.
+`YYYY` is the **printed invoice date** on page 1, not the source folder year.
+The source day folder name is kept as-is (`01-Sep-26`, not rewritten). If the
+printed date cannot be read, the file is `REVIEW` and is not copied.
 
 You can point the app at:
 
@@ -66,7 +72,7 @@ Do not email a Python installer unless they have IT support. OCR models come fro
 
 ## Windows / local OCR
 
-Use **Python 3.11 or 3.12**, not 3.14. PaddlePaddle has no 3.14 wheel, and `pip install -r requirements.txt` used to fail before Streamlit installed.
+Use **Python 3.12** (`py -3.12`), not 3.14. PaddlePaddle has no 3.14 wheel, and `pip install -r requirements.txt` used to fail before Streamlit installed.
 
 **Do not click the yellow “Download Python” button on python.org.** That always installs the newest release (currently 3.14). Use this 64-bit installer instead:
 
@@ -109,6 +115,16 @@ python -m streamlit run app.py
 
 If Windows says `'streamlit' is not recognized`, keep using `python -m streamlit run app.py` (not `streamlit run app.py`). Or double-click `run.bat`.
 
+Desktop (no browser):
+
+```bat
+python -m pip install -r requirements-desktop.txt
+python desktop_app.py
+```
+
+A Windows `.exe` needs PyInstaller on Windows: `packaging\build_windows.bat`.
+A Linux agent can only produce a Linux onedir, not `InvoiceSorter.exe`.
+
 ## Tests
 
 The original sample PDF (`3344.pdf`) is a local file and is not in this repo.
@@ -125,6 +141,6 @@ OCR tests need RapidOCR from `requirements.txt`. PaddleOCR is optional.
 
 Before running this against a large production folder, test on a copy of the
 data. The app is intentionally conservative: if it cannot extract a customer
-or invoice number, it reports REVIEW rather than guessing.
+invoice number, or printed date, it reports REVIEW rather than guessing.
 
 PIS processing is not included yet.

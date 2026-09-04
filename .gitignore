@@ -45,3 +45,6 @@ next-env.d.ts
 __pycache__/
 *.py[cod]
 .pytest_cache/
+invoice_sorter_app_v2/dist/
+invoice_sorter_app_v2/build/
+invoice_sorter_app_v2/.venv/
