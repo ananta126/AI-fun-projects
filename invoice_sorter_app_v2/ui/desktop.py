@@ -5,7 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -60,8 +61,8 @@ class InvoiceSorterWindow(QMainWindow):
         self._worker = None
 
         intro = QLabel(
-            "Each PDF is one invoice. Page 1 is read; the whole file is copied to "
-            "Customer / printed year / source day folder / GST invoice no.pdf"
+            "Desktop app — no browser. Each PDF is one invoice. Page 1 is read; "
+            "the whole file is copied to Customer / printed year / source day / GST invoice no.pdf"
         )
         intro.setWordWrap(True)
 
@@ -69,15 +70,19 @@ class InvoiceSorterWindow(QMainWindow):
         self.input_edit.setPlaceholderText(r"C:\Invoices\June 26  or  month.zip")
         self.output_edit = QLineEdit()
         self.output_edit.setPlaceholderText(r"C:\Invoices\Output")
+        self._output_root = None
 
-        browse_in = QPushButton("Browse…")
-        browse_in.clicked.connect(self._browse_input)
-        browse_out = QPushButton("Browse…")
+        browse_zip = QPushButton("Choose zip")
+        browse_zip.clicked.connect(self._browse_zip)
+        browse_folder = QPushButton("Choose folder")
+        browse_folder.clicked.connect(self._browse_input_folder)
+        browse_out = QPushButton("Choose folder")
         browse_out.clicked.connect(self._browse_output)
 
         in_row = QHBoxLayout()
         in_row.addWidget(self.input_edit)
-        in_row.addWidget(browse_in)
+        in_row.addWidget(browse_zip)
+        in_row.addWidget(browse_folder)
         out_row = QHBoxLayout()
         out_row.addWidget(self.output_edit)
         out_row.addWidget(browse_out)
@@ -88,12 +93,17 @@ class InvoiceSorterWindow(QMainWindow):
 
         self.run_button = QPushButton("Sort invoices")
         self.run_button.clicked.connect(self._start)
+        self.open_output_button = QPushButton("Open output folder")
+        self.open_output_button.setEnabled(False)
+        self.open_output_button.clicked.connect(self._open_output)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        self.status = QLabel(
-            "Ready. PIS folders are ignored. PaddleOCR stays off unless INVOICE_SORTER_USE_PADDLE=1."
-        )
+        self.status = QLabel("Ready. PIS folders are ignored. Choose a month zip or folder, then Sort.")
         self.status.setWordWrap(True)
+
+        actions = QHBoxLayout()
+        actions.addWidget(self.run_button)
+        actions.addWidget(self.open_output_button)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -104,7 +114,7 @@ class InvoiceSorterWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(intro)
         layout.addLayout(form)
-        layout.addWidget(self.run_button)
+        layout.addLayout(actions)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addWidget(self.table)
@@ -113,10 +123,13 @@ class InvoiceSorterWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-    def _browse_input(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose zip", "", "Zip (*.zip);;All files (*)")
-        if not path:
-            path = QFileDialog.getExistingDirectory(self, "Choose input folder")
+    def _browse_zip(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Choose invoice zip", "", "Zip (*.zip)")
+        if path:
+            self.input_edit.setText(path)
+
+    def _browse_input_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Choose input folder")
         if path:
             self.input_edit.setText(path)
 
@@ -136,7 +149,9 @@ class InvoiceSorterWindow(QMainWindow):
             return
         output.mkdir(parents=True, exist_ok=True)
 
+        self._output_root = output
         self.run_button.setEnabled(False)
+        self.open_output_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -163,6 +178,7 @@ class InvoiceSorterWindow(QMainWindow):
 
     def _on_finished(self, results: list):
         self.run_button.setEnabled(True)
+        self.open_output_button.setEnabled(self._output_root is not None)
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
@@ -190,6 +206,11 @@ class InvoiceSorterWindow(QMainWindow):
         self.run_button.setEnabled(True)
         QMessageBox.critical(self, "Sort failed", message)
         self.status.setText(message)
+
+    def _open_output(self):
+        if self._output_root is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_root)))
 
     def _cleanup_worker(self):
         if self._worker is not None:

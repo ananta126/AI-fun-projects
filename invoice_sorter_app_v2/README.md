@@ -10,9 +10,9 @@ Each source PDF is treated as **one complete invoice package**. Only **page 1**
 is read (GST header). The rest of the pages are copied with the file and are
 not OCR'd. The app does not split multi-invoice PDFs.
 
-Engine code lives in `core/sorter.py`. Streamlit UI is `app.py`. The Windows
-desktop UI is `desktop_app.py` / `ui/desktop.py`. Timing helper:
-`python tools/benchmark.py <input> <output>`.
+This is a **desktop app**. The Windows build is `InvoiceSorter.exe` (no browser,
+no Streamlit). Engine: `core/sorter.py`. Desktop UI: `desktop_app.py` /
+`ui/desktop.py`. Streamlit `app.py` is optional and not required to sort files.
 
 ## Output logic
 
@@ -42,33 +42,20 @@ You can point the app at:
 
 Nested date folders are found automatically. PIS folders are left untouched.
 
-## Share with a client (no install on their PC)
+## Windows desktop (recommended)
 
-The client does **not** need Python. You host the app; they use a browser.
+Give the client **InvoiceSorter.exe**. They do not install Python or open a browser.
 
-1. You start the app on a machine with Python (`pip install -r requirements.txt`).
-2. Send them the URL.
-3. They open **Client link (upload zip)**, upload `June 26-....zip`, wait for OCR, then download `sorted_invoices.zip`.
+1. Download `InvoiceSorter-windows.zip` from the GitHub Actions run **Windows EXE**
+   on branch `cursor/invoice-sorter-tests-2ab8` (artifact `InvoiceSorter-windows`).
+2. Unzip the folder.
+3. Double-click `InvoiceSorter.exe`.
+4. Choose the month zip or folder, choose an output folder, click **Sort invoices**.
 
-### Option A — you run it, they open the link on the same network
+Keep the whole unzipped folder together (OCR models sit next to the exe). Windows
+may show a SmartScreen prompt for an unsigned build; choose Run anyway.
 
-```bash
-streamlit run app.py --server.address 0.0.0.0
-```
-
-Share `http://YOUR-PC-IP:8501`. Keep the PC on while they use it. This is only for a trusted local network.
-
-### Option B — Streamlit Community Cloud (public URL)
-
-Deploy `invoice_sorter_app_v2/app.py` from GitHub. OCR uses **PaddleOCR** from `requirements.txt`. First run downloads PP-OCR models.
-
-The client then only needs the Streamlit URL. Invoice PDFs will pass through that host, so use a private app if the documents are confidential.
-
-### Option C — you process the zip and send results back
-
-If you cannot host a URL, have the client send the month zip. You run the sorter locally and return `sorted_invoices.zip`. They never install anything.
-
-Do not email a Python installer unless they have IT support. OCR models come from pip.
+To rebuild the exe on a Windows PC with Python 3.12: `packaging\build_windows.bat`.
 
 ## Windows / local OCR
 
@@ -104,26 +91,19 @@ The printed GST **Invoice No.** (for example `20242500788`) is taken from the pa
 
 Folder names come from `customers.txt` (the billed-to list in Summary.xlsx). OCR is matched to that list, so Rapid Machining invoices file as `Rapid Machining Tech.Pvt.Ltd.` rather than OCR spellings.
 
-## Install and run
+## Install and run from source (no exe yet)
+
+Double-click `run.bat`, or:
 
 ```bat
 py -3.12 -m venv .venv
 .venv\Scripts\activate
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
-```
-
-If Windows says `'streamlit' is not recognized`, keep using `python -m streamlit run app.py` (not `streamlit run app.py`). Or double-click `run.bat`.
-
-Desktop (no browser):
-
-```bat
 python -m pip install -r requirements-desktop.txt
 python desktop_app.py
 ```
 
-A Windows `.exe` needs PyInstaller on Windows: `packaging\build_windows.bat`.
-A Linux agent can only produce a Linux onedir, not `InvoiceSorter.exe`.
+Streamlit is optional (`python -m pip install -r requirements.txt` then
+`python -m streamlit run app.py`). Do not use Streamlit if you want the desktop window.
 
 ## Tests
 
