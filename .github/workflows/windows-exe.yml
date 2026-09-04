@@ -1,0 +1,45 @@
+name: Windows EXE
+
+on:
+  push:
+    branches: ["cursor/**"]
+    paths:
+      - "invoice_sorter_app_v2/**"
+      - ".github/workflows/windows-exe.yml"
+  pull_request:
+    paths:
+      - "invoice_sorter_app_v2/**"
+      - ".github/workflows/windows-exe.yml"
+  workflow_dispatch:
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install desktop dependencies
+        working-directory: invoice_sorter_app_v2
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-desktop.txt pyinstaller
+      - name: Build InvoiceSorter.exe
+        working-directory: invoice_sorter_app_v2
+        run: python -m PyInstaller --noconfirm packaging/invoice_sorter.spec
+      - name: Add client launch files
+        working-directory: invoice_sorter_app_v2
+        shell: pwsh
+        run: |
+          Copy-Item packaging/HOW_TO_RUN.txt dist/InvoiceSorter/HOW_TO_RUN.txt
+          Copy-Item packaging/Run-InvoiceSorter.bat dist/InvoiceSorter/"Run Invoice Sorter.bat"
+      - name: Zip onedir
+        working-directory: invoice_sorter_app_v2/dist
+        shell: pwsh
+        run: Compress-Archive -Path InvoiceSorter -DestinationPath InvoiceSorter-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InvoiceSorter-windows
+          path: invoice_sorter_app_v2/dist/InvoiceSorter-windows.zip
+          if-no-files-found: error
