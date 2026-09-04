@@ -1,0 +1,21 @@
+Invoice Sorter — how to run (no Python)
+
+1. Unzip this folder. Keep every file next to InvoiceSorter.exe.
+   Do not copy the .exe out by itself.
+
+2. Double-click InvoiceSorter.exe
+   (or "Run Invoice Sorter.bat")
+
+3. Windows SmartScreen may say "Windows protected your PC".
+   Click More info → Run anyway.
+
+4. In the window: Choose zip or Choose folder (the month of invoices),
+   choose an output folder, click Sort invoices.
+
+Python is NOT required. Do not install Python. Do not run run.bat,
+desktop_app.py, or app.py from the GitHub source zip.
+
+This app package should be about 180 MB, not 1–2 GB.
+If your zip is ~1.75 GB you sent the source code or invoice PDFs.
+Send this InvoiceSorter folder only. Invoices stay on the user's PC;
+they pick that folder inside the app.

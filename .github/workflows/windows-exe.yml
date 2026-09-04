@@ -28,6 +28,12 @@ jobs:
       - name: Build InvoiceSorter.exe
         working-directory: invoice_sorter_app_v2
         run: python -m PyInstaller --noconfirm packaging/invoice_sorter.spec
+      - name: Add client launch files
+        working-directory: invoice_sorter_app_v2
+        shell: pwsh
+        run: |
+          Copy-Item packaging/HOW_TO_RUN.txt dist/InvoiceSorter/HOW_TO_RUN.txt
+          Copy-Item packaging/Run-InvoiceSorter.bat dist/InvoiceSorter/"Run Invoice Sorter.bat"
       - name: Zip onedir
         working-directory: invoice_sorter_app_v2/dist
         shell: pwsh

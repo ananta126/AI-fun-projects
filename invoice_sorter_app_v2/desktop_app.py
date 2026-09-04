@@ -21,6 +21,29 @@ def _prepare_frozen_env():
 
 if __name__ == "__main__":
     _prepare_frozen_env()
-    from ui.desktop import main
+    try:
+        from ui.desktop import main
 
-    main()
+        main()
+    except Exception:
+        import traceback
+
+        details = traceback.format_exc()
+        try:
+            log_path = Path(sys.executable).resolve().parent / "invoice_sorter.log"
+            with open(log_path, "a", encoding="utf-8") as log:
+                log.write(details + "\n")
+        except OSError:
+            pass
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Invoice Sorter failed to start.\n\n" + details[:1500],
+                "Invoice Sorter",
+                0x10,
+            )
+        except Exception:
+            pass
+        raise

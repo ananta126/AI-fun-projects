@@ -44,13 +44,18 @@ Nested date folders are found automatically. PIS folders are left untouched.
 
 ## Windows desktop (recommended)
 
-Give the client **InvoiceSorter.exe**. They do not install Python or open a browser.
+Give the client **only** `InvoiceSorter-windows.zip` from GitHub Actions
+(**about 180 MB**). Do not zip the GitHub repo, `node_modules`, a Python
+`.venv`, or the invoice PDFs into the same archive (that becomes ~1–2 GB
+and still requires Python).
 
 1. Download `InvoiceSorter-windows.zip` from the GitHub Actions run **Windows EXE**
-   on branch `cursor/invoice-sorter-tests-2ab8` (artifact `InvoiceSorter-windows`).
-2. Unzip the folder.
-3. Double-click `InvoiceSorter.exe`.
-4. Choose the month zip or folder, choose an output folder, click **Sort invoices**.
+   (artifact `InvoiceSorter-windows`).
+2. Unzip. Open the `InvoiceSorter` folder.
+3. Double-click `InvoiceSorter.exe` (or `Run Invoice Sorter.bat`).
+4. Choose the month zip/folder of invoices on that PC, choose output, Sort.
+
+The client must **not** install Python and must **not** run `run.bat` or `.py` files.
 
 Keep the whole unzipped folder together (OCR models sit next to the exe). Windows
 may show a SmartScreen prompt for an unsigned build; choose Run anyway.

@@ -9,6 +9,8 @@ spec_root = Path(SPECPATH).resolve().parent
 
 datas = [
     (str(spec_root / "customers.txt"), "."),
+    (str(spec_root / "packaging" / "HOW_TO_RUN.txt"), "."),
+    (str(spec_root / "packaging" / "Run-InvoiceSorter.bat"), "."),
 ]
 binaries = []
 hiddenimports = [
@@ -41,7 +43,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["paddleocr", "paddle", "streamlit", "pytest"],
+    excludes=["paddleocr", "paddle", "streamlit", "pytest", "torch", "tensorflow"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
