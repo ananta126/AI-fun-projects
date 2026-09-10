@@ -14,6 +14,8 @@ This is a **desktop app**. The Windows build is `InvoiceSorter.exe` (no browser,
 no Streamlit). Engine: `core/sorter.py`. Desktop UI: `desktop_app.py` /
 `ui/desktop.py`. Streamlit `app.py` is optional and not required to sort files.
 
+**Logic map (every filing rule, for debugging):** [LOGIC.md](LOGIC.md).
+
 ## Output logic
 
 Source:
