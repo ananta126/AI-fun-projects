@@ -12,6 +12,9 @@ Invoice Sorter — how to run (no Python)
 4. In the window: Choose zip or Choose folder (the month of invoices),
    choose an output folder, click Sort invoices.
 
+5. After sorting, click Open Excel report (also saved in the output folder
+   as invoice_sorter_exceptions.xlsx). Sheets: Could_not_read and Skipped.
+
 Python is NOT required. Do not install Python. Do not run run.bat,
 desktop_app.py, or app.py from the GitHub source zip.
 

@@ -182,6 +182,41 @@ def test_missing_invoice_folder_is_skipped(tmp_path):
     assert results[0]["status"] == "SKIPPED"
 
 
+def test_exception_excel_lists_unreadable_and_skipped(tmp_path):
+    from openpyxl import load_workbook
+
+    from core.sorter import EXCEPTION_REPORT_NAME
+
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    import fitz
+
+    bad = input_root / "26-Jun-26" / "Invoice" / "notes.pdf"
+    bad.parent.mkdir(parents=True)
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "DELIVERY CHALLAN\nNo invoice header here.")
+    doc.save(bad)
+    doc.close()
+    (input_root / "27-Jun-26" / "PIS").mkdir(parents=True)
+
+    results = process(input_root, output_root)
+    report = output_root / EXCEPTION_REPORT_NAME
+    assert report.exists()
+    wb = load_workbook(report)
+    assert {ws.title for ws in wb.worksheets} >= {"Summary", "Could_not_read", "Skipped"}
+    unread = [row[1].value for row in wb["Could_not_read"].iter_rows(min_row=2) if row[0].value]
+    skipped = [row[2].value for row in wb["Skipped"].iter_rows(min_row=2) if row[0].value]
+    assert any(name and "notes.pdf" in str(name) for name in unread)
+    assert "27-Jun-26" in skipped
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert copied
+
+
 def test_retry_ocr_only_retries_first_page(tmp_path, monkeypatch):
     from PIL import Image
     from core.sorter import retry_ocr_first_page

@@ -54,6 +54,9 @@ and still requires Python).
 2. Unzip. Open the `InvoiceSorter` folder.
 3. Double-click `InvoiceSorter.exe` (or `Run Invoice Sorter.bat`).
 4. Choose the month zip/folder of invoices on that PC, choose output, Sort.
+5. Open **Open Excel report** (also written as `invoice_sorter_exceptions.xlsx`
+   in the output folder). It lists files that could not be read and days that
+   were skipped (for example PIS-only folders).
 
 The client must **not** install Python and must **not** run `run.bat` or `.py` files.
 

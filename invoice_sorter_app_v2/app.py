@@ -4,6 +4,8 @@ from tempfile import TemporaryDirectory
 import streamlit as st
 
 from core.sorter import (
+    EXCEPTION_REPORT_NAME,
+    exception_report_bytes,
     extract_customer_name,
     extract_invoice_date,
     extract_invoice_number,
@@ -33,7 +35,7 @@ __all__ = [
 ]
 
 
-def display_results(results):
+def display_results(results, report_key="excel_report"):
     if not results:
         st.warning("No matching date folders / invoice PDFs were found.")
         return
@@ -47,6 +49,14 @@ def display_results(results):
     st.dataframe(results, use_container_width=True)
     if review:
         st.warning("Some files need review. Nothing uncertain was silently filed.")
+    report = exception_report_bytes(results)
+    st.download_button(
+        "⬇️ Download Excel report (unreadable and skipped)",
+        data=report,
+        file_name=EXCEPTION_REPORT_NAME,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=report_key,
+    )
 
 
 def render_ui():
@@ -108,7 +118,7 @@ def render_ui():
                 st.session_state["download_name"] = "sorted_invoices.zip"
 
         if st.session_state.get("last_results") is not None:
-            display_results(st.session_state["last_results"])
+            display_results(st.session_state["last_results"], report_key="excel_client")
         if st.session_state.get("download_zip"):
             st.download_button(
                 "⬇️ Download sorted invoices",
@@ -181,7 +191,7 @@ Output/
                         bar.progress(done / total if total else 1.0, text=label)
 
                     results = process(source, output_root, progress=on_progress)
-                    display_results(results)
+                    display_results(results, report_key="excel_local")
 
 
 if __name__ == "__main__":

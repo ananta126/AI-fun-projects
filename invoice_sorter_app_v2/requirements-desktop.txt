@@ -4,3 +4,4 @@ numpy>=1.24
 rapidocr>=3.0
 onnxruntime>=1.17
 PySide6>=6.6
+openpyxl>=3.1

@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.sorter import process  # noqa: E402
+from core.sorter import EXCEPTION_REPORT_NAME, process  # noqa: E402
 
 
 class SortWorker(QObject):
@@ -71,6 +71,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.output_edit = QLineEdit()
         self.output_edit.setPlaceholderText(r"C:\Invoices\Output")
         self._output_root = None
+        self._report_path = None
 
         browse_zip = QPushButton("Choose zip")
         browse_zip.clicked.connect(self._browse_zip)
@@ -96,6 +97,9 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_output_button = QPushButton("Open output folder")
         self.open_output_button.setEnabled(False)
         self.open_output_button.clicked.connect(self._open_output)
+        self.open_report_button = QPushButton("Open Excel report")
+        self.open_report_button.setEnabled(False)
+        self.open_report_button.clicked.connect(self._open_report)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.status = QLabel("Ready. PIS folders are ignored. Choose a month zip or folder, then Sort.")
@@ -104,6 +108,7 @@ class InvoiceSorterWindow(QMainWindow):
         actions = QHBoxLayout()
         actions.addWidget(self.run_button)
         actions.addWidget(self.open_output_button)
+        actions.addWidget(self.open_report_button)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -152,6 +157,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._output_root = output
         self.run_button.setEnabled(False)
         self.open_output_button.setEnabled(False)
+        self.open_report_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -179,11 +185,20 @@ class InvoiceSorterWindow(QMainWindow):
     def _on_finished(self, results: list):
         self.run_button.setEnabled(True)
         self.open_output_button.setEnabled(self._output_root is not None)
+        self._report_path = None
+        if self._output_root is not None:
+            report = self._output_root / EXCEPTION_REPORT_NAME
+            if report.exists():
+                self._report_path = report
+        self.open_report_button.setEnabled(self._report_path is not None)
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
         skipped = sum(r.get("status") == "SKIPPED" for r in results)
-        self.status.setText(f"Done. Copied {copied}, review {review}, skipped {skipped}.")
+        status = f"Done. Copied {copied}, review {review}, skipped {skipped}."
+        if self._report_path:
+            status += f" Excel report: {self._report_path.name}"
+        self.status.setText(status)
         self.table.setRowCount(len(results))
         for row, item in enumerate(results):
             values = [
@@ -211,6 +226,11 @@ class InvoiceSorterWindow(QMainWindow):
         if self._output_root is None:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_root)))
+
+    def _open_report(self):
+        if self._report_path is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._report_path)))
 
     def _cleanup_worker(self):
         if self._worker is not None:

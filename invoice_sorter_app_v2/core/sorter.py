@@ -636,6 +636,83 @@ def resolve_input(path: Path) -> Path:
     raise FileNotFoundError(path)
 
 
+EXCEPTION_REPORT_NAME = "invoice_sorter_exceptions.xlsx"
+_REPORT_COLUMNS = (
+    "status",
+    "source_file",
+    "date_folder",
+    "invoice_number",
+    "customer",
+    "year",
+    "source_pages",
+    "reason",
+)
+
+
+def _report_rows(results, statuses):
+    return [row for row in results if row.get("status") in statuses]
+
+
+def write_exception_report(results, dest) -> Path | None:
+    """Excel of files that could not be read (REVIEW) or were skipped.
+
+    dest may be a Path or a binary file object. Always writes Summary,
+    Could_not_read, and Skipped sheets so the user can download a report
+    even when every invoice copied successfully.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    copied = sum(r.get("status") == "COPIED" for r in results)
+    review = _report_rows(results, {"REVIEW"})
+    skipped = _report_rows(results, {"SKIPPED"})
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Summary"
+    summary.append(["Metric", "Count"])
+    summary.append(["Copied", copied])
+    summary.append(["Could not read (REVIEW)", len(review)])
+    summary.append(["Skipped", len(skipped)])
+    summary.append(["Total rows", len(results)])
+    summary["A1"].font = Font(bold=True)
+    summary["B1"].font = Font(bold=True)
+
+    def _fill(sheet_name, rows):
+        sheet = wb.create_sheet(sheet_name)
+        headers = [
+            "Status",
+            "Source file",
+            "Source day folder",
+            "Invoice number",
+            "Customer",
+            "Year",
+            "Source pages",
+            "Reason",
+        ]
+        sheet.append(headers)
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        for row in rows:
+            sheet.append([row.get(key, "") or "" for key in _REPORT_COLUMNS])
+        for index, header in enumerate(headers, start=1):
+            extra = max((len(str(row.get(_REPORT_COLUMNS[index - 1], "") or "")) for row in rows), default=0)
+            sheet.column_dimensions[get_column_letter(index)].width = min(60, max(len(header) + 2, extra + 2))
+
+    _fill("Could_not_read", review)
+    _fill("Skipped", skipped)
+
+    wb.save(dest)
+    return dest if isinstance(dest, Path) else None
+
+
+def exception_report_bytes(results) -> bytes:
+    buffer = io.BytesIO()
+    write_exception_report(results, buffer)
+    return buffer.getvalue()
+
+
 def process(root: Path, output_root: Path, progress=None):
     root = resolve_input(root)
     results = []
@@ -654,7 +731,19 @@ def process(root: Path, output_root: Path, progress=None):
         jobs.extend(pdfs)
 
     def _run(pdf):
-        return process_invoice_file(pdf, root, output_root)
+        try:
+            return process_invoice_file(pdf, root, output_root)
+        except Exception as exc:  # noqa: BLE001 — file still appears on the Excel report
+            return [{
+                "status": "REVIEW",
+                "source_file": str(pdf.relative_to(root)),
+                "source_pages": "",
+                "invoice_number": "",
+                "customer": "",
+                "date_folder": date_folder_name_for(pdf, root),
+                "year": "",
+                "reason": f"Could not read file: {exc}",
+            }]
 
     total = len(jobs)
     if jobs:
@@ -676,6 +765,8 @@ def process(root: Path, output_root: Path, progress=None):
                     done += 1
                     if progress:
                         progress(done, total, "")
+    output_root.mkdir(parents=True, exist_ok=True)
+    write_exception_report(results, output_root / EXCEPTION_REPORT_NAME)
     return results
 
 

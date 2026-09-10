@@ -24,6 +24,7 @@ hiddenimports = [
     "pyclipper",
     "shapely",
     "yaml",
+    "openpyxl",
 ]
 
 for pkg in ("rapidocr", "onnxruntime"):
