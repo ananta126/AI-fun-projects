@@ -11,9 +11,22 @@ Invoice Sorter — how to run (no Python)
 
 4. In the window: Choose zip or Choose folder (the month of invoices),
    choose an output folder, click Sort invoices.
+   Use the same output folder every day so customer folders are reused.
 
-5. After sorting, click Open Excel report (also saved in the output folder
-   as invoice_sorter_exceptions.xlsx). Sheets: Could_not_read and Skipped.
+5. Copied files land in:
+   Customer / year from the scan folder / source day / invoice number.pdf
+   Example: 01-Sep-26 becomes year 2026.
+   When every invoice in a source folder copied, that folder is renamed
+   with _done and is skipped next time. PIS folders are not processed.
+
+6. Files that could not be filed are in invoice_sorter_review.csv
+   (Open review CSV). Fill Correct Customer ID using customer_ids.csv
+   (Open customer list). Leave invoice number and year blank if they
+   are already correct. Save the CSV, then click Import corrections.
+   That step does not OCR the file again.
+
+7. Open Excel report is invoice_sorter_exceptions.xlsx
+   (Could_not_read and Skipped).
 
 Python is NOT required. Do not install Python. Do not run run.bat,
 desktop_app.py, or app.py from the GitHub source zip.

@@ -45,6 +45,9 @@ _FOLD = {
 FUZZY_AUTO_RATIO = 0.92
 FUZZY_AUTO_GAP = 0.08
 FUZZY_MAX_TOKENS = 8
+# Below this, the nearest official name is not close enough to show as a suggestion.
+# Zenith Quartz vs a random list name scores about 0.42 and must stay blank.
+SUGGESTION_MIN_RATIO = 0.80
 
 
 @dataclass
@@ -192,6 +195,10 @@ def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[Al
             True, best_id, best_name, "FUZZY", best_score, second_name, second_score, second_id, None, normalized,
         )
     reason = "CUSTOMER_AMBIGUOUS" if best_score >= FUZZY_AUTO_RATIO else "CUSTOMER_NOT_MATCHED"
+    if best_score < SUGGESTION_MIN_RATIO:
+        return MatchResult(
+            False, None, None, "NONE", None, None, None, None, "CUSTOMER_NOT_MATCHED", normalized,
+        )
     return MatchResult(
         False,
         best_id,

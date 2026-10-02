@@ -72,6 +72,9 @@ def test_unknown_customer_does_not_create_a_folder(tmp_path):
     results = process(input_root, output_root)
     assert results[0]["status"] == "REVIEW"
     assert results[0]["reason_code"] == "CUSTOMER_NOT_MATCHED"
+    assert "Zenith" in results[0]["customer"]
+    assert results[0]["customer_id"] == ""
+    assert (output_root / "customer_ids.csv").is_file()
     assert list(output_root.rglob("*.pdf")) == []
     assert not (input_root / "01-Sep-26_done").exists()
 

@@ -29,7 +29,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.pipeline import import_corrections  # noqa: E402
-from core.review_csv import REVIEW_CSV_NAME  # noqa: E402
+from core.review_csv import CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
 from core.sorter import EXCEPTION_REPORT_NAME, process  # noqa: E402
 
 
@@ -58,7 +58,7 @@ class InvoiceSorterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Invoice Sorter")
-        self.resize(980, 640)
+        self.resize(1100, 680)
         self._thread = None
         self._worker = None
 
@@ -76,6 +76,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._output_root = None
         self._report_path = None
         self._review_path = None
+        self._customer_list_path = None
 
         browse_zip = QPushButton("Choose zip")
         browse_zip.clicked.connect(self._browse_zip)
@@ -107,6 +108,9 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_review_button = QPushButton("Open review CSV")
         self.open_review_button.setEnabled(False)
         self.open_review_button.clicked.connect(self._open_review)
+        self.open_customers_button = QPushButton("Open customer list")
+        self.open_customers_button.setEnabled(False)
+        self.open_customers_button.clicked.connect(self._open_customers)
         self.import_button = QPushButton("Import corrections")
         self.import_button.clicked.connect(self._import_corrections)
         self.progress = QProgressBar()
@@ -121,12 +125,14 @@ class InvoiceSorterWindow(QMainWindow):
         actions.addWidget(self.run_button)
         actions.addWidget(self.open_output_button)
         actions.addWidget(self.open_report_button)
-        actions.addWidget(self.open_review_button)
-        actions.addWidget(self.import_button)
+        actions2 = QHBoxLayout()
+        actions2.addWidget(self.open_review_button)
+        actions2.addWidget(self.open_customers_button)
+        actions2.addWidget(self.import_button)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
-            ["Status", "Invoice", "Customer", "Year", "Source day", "Source file", "Reason"]
+            ["Status", "Document", "Invoice", "Customer", "Customer ID", "Year", "Source day", "Reason"]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
 
@@ -134,6 +140,7 @@ class InvoiceSorterWindow(QMainWindow):
         layout.addWidget(intro)
         layout.addLayout(form)
         layout.addLayout(actions)
+        layout.addLayout(actions2)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addWidget(self.table)
@@ -173,6 +180,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_output_button.setEnabled(False)
         self.open_report_button.setEnabled(False)
         self.open_review_button.setEnabled(False)
+        self.open_customers_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -202,6 +210,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_output_button.setEnabled(self._output_root is not None)
         self._report_path = None
         self._review_path = None
+        self._customer_list_path = None
         if self._output_root is not None:
             report = self._output_root / EXCEPTION_REPORT_NAME
             if report.exists():
@@ -209,8 +218,12 @@ class InvoiceSorterWindow(QMainWindow):
             review_csv = self._output_root / REVIEW_CSV_NAME
             if review_csv.exists():
                 self._review_path = review_csv
+            customers = self._output_root / CUSTOMER_LIST_NAME
+            if customers.exists():
+                self._customer_list_path = customers
         self.open_report_button.setEnabled(self._report_path is not None)
         self.open_review_button.setEnabled(self._review_path is not None)
+        self.open_customers_button.setEnabled(self._customer_list_path is not None)
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
@@ -224,11 +237,12 @@ class InvoiceSorterWindow(QMainWindow):
         for row, item in enumerate(results):
             values = [
                 item.get("status", ""),
+                item.get("document_id", ""),
                 item.get("invoice_number", ""),
                 item.get("customer", ""),
+                item.get("customer_id", ""),
                 item.get("year", ""),
                 item.get("date_folder", ""),
-                item.get("source_file", ""),
                 item.get("reason", ""),
             ]
             for col, value in enumerate(values):
@@ -258,9 +272,18 @@ class InvoiceSorterWindow(QMainWindow):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._review_path)))
 
+    def _open_customers(self):
+        if self._customer_list_path is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._customer_list_path)))
+
     def _import_corrections(self):
         if self._output_root is None:
-            QMessageBox.warning(self, "Output missing", "Sort a batch before importing corrections.")
+            typed = Path(self.output_edit.text().strip()) if self.output_edit.text().strip() else None
+            if typed is not None and typed.is_dir():
+                self._output_root = typed
+        if self._output_root is None:
+            QMessageBox.warning(self, "Output missing", "Choose the output folder from a previous sort, then import.")
             return
         path, _ = QFileDialog.getOpenFileName(self, "Corrections CSV", "", "CSV (*.csv)")
         if not path:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 REVIEW_CSV_NAME = "invoice_sorter_review.csv"
+CUSTOMER_LIST_NAME = "customer_ids.csv"
 
 REVIEW_COLUMNS = [
     "Document ID",
@@ -67,6 +68,20 @@ def write_review_csv(documents, dest: Path) -> Path:
                 "Correct Customer ID": "",
                 "Correct Invoice Number": "",
                 "Correct Year": "",
+            })
+    return dest
+
+
+def write_customer_list(customers, dest: Path) -> Path:
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["Customer ID", "Official Customer Name"])
+        writer.writeheader()
+        for row in customers:
+            writer.writerow({
+                "Customer ID": row["customer_id"],
+                "Official Customer Name": row["official_name"],
             })
     return dest
 

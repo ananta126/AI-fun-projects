@@ -7,7 +7,13 @@ from pathlib import Path
 
 from core.db import Store
 from core.matching import AliasRef, CustomerRef, match_customer
-from core.review_csv import REVIEW_CSV_NAME, read_corrections, write_review_csv
+from core.review_csv import (
+    CUSTOMER_LIST_NAME,
+    REVIEW_CSV_NAME,
+    read_corrections,
+    write_customer_list,
+    write_review_csv,
+)
 from core.sorter import (
     billed_to_region,
     extract_invoice_number,
@@ -344,6 +350,7 @@ def _write_reports(store: Store, output_root: Path, extra_results: list[dict]):
     output_root.mkdir(parents=True, exist_ok=True)
     write_exception_report(results, output_root / EXCEPTION_REPORT_NAME)
     write_review_csv(store.review_documents(), output_root / REVIEW_CSV_NAME)
+    write_customer_list(store.customers(), output_root / CUSTOMER_LIST_NAME)
     return results
 
 
