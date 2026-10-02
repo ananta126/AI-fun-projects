@@ -21,7 +21,7 @@ UIs only call `process()` / `process_uploaded_zip()`; they do not re-implement e
 | Source day folder kept as-is | Destination uses the folder name string, including `01-Sep-26` |
 | Duplicate dest → REVIEW | Existing `{invoice}.pdf` is not overwritten and `__DUPLICATE.pdf` is not written |
 | Uncertain → REVIEW | No copy. Excel `Could_not_read` and `invoice_sorter_review.csv` |
-| Customer = billed-to customer id | `customers.txt` seeded into SQLite. Exact phrase, then approved alias, then strict fuzzy |
+| Customer = billed-to customer id | `customer_master_alias_mapping.xlsx` seeds ids, official names, and Alias Master. Review Required spellings are not filed. Then strict fuzzy |
 | Unknown customer | No folder. `CUSTOMER_NOT_MATCHED` until the review CSV supplies Correct Customer ID |
 | Resume | Completed source units are renamed `*_done` and skipped. State is `invoice_processor.db` |
 | Rapid Machining folder spelling | Official list line `Rapid Machining Tech.Pvt.Ltd.` |
@@ -37,7 +37,8 @@ UIs only call `process()` / `process_uploaded_zip()`; they do not re-implement e
 ```
 invoice_sorter_app_v2/
   core/sorter.py          All OCR, extract, copy, Excel report
-  customers.txt           Official billed-to names (from Summary.xlsx)
+  customers.txt           Official billed-to names (fallback if the workbook is missing)
+  customer_master_alias_mapping.xlsx   Customer ids, Alias Master, Review Required
   desktop_app.py          EXE / python entry; crash log + MessageBox
   ui/desktop.py           PySide6 window; calls process() on a QThread
   app.py                  Optional Streamlit UI (same engine)

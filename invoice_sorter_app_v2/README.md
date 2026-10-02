@@ -102,7 +102,7 @@ The app uses **RapidOCR on page 1 only** (GST header band). Supporting pages are
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
-Folder names come from `customers.txt` (the billed-to list in Summary.xlsx). OCR is matched to that list, so Rapid Machining invoices file as `Rapid Machining Tech.Pvt.Ltd.` rather than OCR spellings.
+Folder names and customer ids come from `customer_master_alias_mapping.xlsx`. Alias Master spellings are filed automatically. Review Required spellings stay in the review CSV. Rapid Machining invoices still file as `Rapid Machining Tech.Pvt.Ltd.`
 
 ## Install and run from source (no exe yet)
 

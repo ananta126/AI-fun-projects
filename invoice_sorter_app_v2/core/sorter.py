@@ -369,16 +369,22 @@ _TOKEN_FOLD = {
 
 
 def load_official_customers():
-    """Billed-to names from the client's Summary.xlsx customer list."""
+    """Billed-to names from the mapping workbook, then customers.txt."""
     global _OFFICIAL_CUSTOMERS
     if _OFFICIAL_CUSTOMERS is None:
-        path = app_root() / "customers.txt"
-        names = []
-        if path.exists():
-            for line in path.read_text(encoding="utf-8").splitlines():
-                name = " ".join(line.replace("\xa0", " ").split()).strip()
-                if name and not name.startswith("#"):
-                    names.append(name)
+        from core.customer_master import load_customer_master
+
+        master = load_customer_master()
+        if master is not None:
+            names = [item.official_name for item in master.customers]
+        else:
+            path = app_root() / "customers.txt"
+            names = []
+            if path.exists():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    name = " ".join(line.replace("\xa0", " ").split()).strip()
+                    if name and not name.startswith("#"):
+                        names.append(name)
         _OFFICIAL_CUSTOMERS = names
     return _OFFICIAL_CUSTOMERS
 

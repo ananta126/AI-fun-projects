@@ -105,6 +105,50 @@ class Store:
             self.add_customer(name)
         self.conn.commit()
 
+    def seed_master(self, customers, aliases):
+        """Insert workbook ids and approved aliases.
+
+        An official name already stored keeps its id, so a database created
+        before the workbook is not renumbered. Aliases attach to that name.
+        """
+        for item in customers:
+            self._insert_customer(item.customer_id, item.official_name)
+        for item in aliases:
+            owner = self.customer_by_name(item.official_name) or self.customer_by_id(item.customer_id)
+            if owner is None:
+                continue
+            self._upsert_alias(item.alias, owner["customer_id"])
+        self.conn.commit()
+
+    def _insert_customer(self, customer_id: str, official_name: str):
+        official_name = " ".join((official_name or "").replace("\xa0", " ").split())
+        if not official_name:
+            return
+        if self.customer_by_name(official_name) is not None:
+            return
+        if customer_id and self.customer_by_id(customer_id) is None:
+            self.conn.execute(
+                "INSERT INTO customers (customer_id, official_name, normalized_name) VALUES (?, ?, ?)",
+                (customer_id, official_name, normalize_customer(official_name)),
+            )
+            return
+        self.add_customer(official_name)
+
+    def _upsert_alias(self, alias_raw: str, customer_id: str):
+        alias_norm = normalize_customer(alias_raw)
+        if not alias_norm:
+            return
+        self.conn.execute(
+            """
+            INSERT INTO customer_aliases (alias_norm, customer_id, alias_raw)
+            VALUES (?, ?, ?)
+            ON CONFLICT(alias_norm) DO UPDATE SET
+                customer_id = excluded.customer_id,
+                alias_raw = excluded.alias_raw
+            """,
+            (alias_norm, customer_id, alias_raw.strip()),
+        )
+
     def add_customer(self, official_name: str) -> sqlite3.Row:
         official_name = " ".join((official_name or "").split())
         existing = self.conn.execute(
@@ -148,21 +192,9 @@ class Store:
         return list(self.conn.execute("SELECT * FROM customer_aliases"))
 
     def set_alias(self, alias_raw: str, customer_id: str):
-        alias_norm = normalize_customer(alias_raw)
-        if not alias_norm:
-            return
         if self.customer_by_id(customer_id) is None:
             raise ValueError(f"Unknown customer id {customer_id}")
-        self.conn.execute(
-            """
-            INSERT INTO customer_aliases (alias_norm, customer_id, alias_raw)
-            VALUES (?, ?, ?)
-            ON CONFLICT(alias_norm) DO UPDATE SET
-                customer_id = excluded.customer_id,
-                alias_raw = excluded.alias_raw
-            """,
-            (alias_norm, customer_id, alias_raw.strip()),
-        )
+        self._upsert_alias(alias_raw, customer_id)
         self.conn.commit()
 
     def start_batch(self, source_root: str) -> int:

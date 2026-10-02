@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from core.customer_master import load_customer_master
 from core.db import Store
 from core.matching import AliasRef, CustomerRef, match_customer
 from core.review_csv import (
@@ -146,7 +147,16 @@ def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     return base
 
 
-def _classify(base: dict, customers, aliases) -> dict:
+def _apply_master(store: Store):
+    master = load_customer_master()
+    if master is None:
+        store.seed(load_official_customers())
+        return frozenset()
+    store.seed_master(master.customers, master.aliases)
+    return master.review_norms
+
+
+def _classify(base: dict, customers, aliases, blocked=None) -> dict:
     if base["state"] == "FAILED":
         return base
     year = base["derived_year"]
@@ -173,7 +183,7 @@ def _classify(base: dict, customers, aliases) -> dict:
             "reason_detail": _PAGE1,
         })
         return base
-    match = match_customer(raw, customers, aliases)
+    match = match_customer(raw, customers, aliases, blocked)
     base["normalized_customer"] = match.normalized
     base["match_method"] = match.method
     base["match_score"] = match.score
@@ -354,7 +364,7 @@ def _write_reports(store: Store, output_root: Path, extra_results: list[dict]):
     return results
 
 
-def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root: Path, progress, execute: bool):
+def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root: Path, progress, execute: bool, blocked=None):
     from concurrent.futures import ThreadPoolExecutor
 
     total = len(jobs)
@@ -362,7 +372,7 @@ def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root
     def _payload(job):
         date_folder, unit, pdf, root = job
         analyzed = _analyze_pdf(pdf, root, date_folder, unit)
-        return _classify(analyzed, customers, aliases)
+        return _classify(analyzed, customers, aliases, blocked)
 
     # jobs are (date_folder, unit, pdf, root)
     payloads = []
@@ -401,7 +411,7 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
     output_root.mkdir(parents=True, exist_ok=True)
     store = Store(output_root / "invoice_processor.db")
     try:
-        store.seed(load_official_customers())
+        blocked = _apply_master(store)
         customers, aliases = _master(store)
         batch_id = store.start_batch(str(root))
         skipped = []
@@ -429,7 +439,7 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
                     jobs.append((date_folder, unit, pdf, root))
         produced = []
         if jobs:
-            produced = _run_jobs(jobs, store, customers, aliases, batch_id, output_root, progress, execute)
+            produced = _run_jobs(jobs, store, customers, aliases, batch_id, output_root, progress, execute, blocked)
         for date_folder in date_folders:
             finalize_date_folder(store, date_folder)
         _write_reports(store, output_root, skipped)
@@ -455,7 +465,7 @@ def run_one(source_pdf: Path, root: Path, output_root: Path):
     source_pdf = Path(source_pdf)
     store = Store(output_root / "invoice_processor.db")
     try:
-        store.seed(load_official_customers())
+        blocked = _apply_master(store)
         existing = store.get_by_source(str(source_pdf.resolve()))
         if existing and existing["state"] == "COMPLETED":
             return [result_from_row(existing)]
@@ -463,7 +473,7 @@ def run_one(source_pdf: Path, root: Path, output_root: Path):
         unit = _unit_for_pdf(source_pdf, date_folder)
         customers, aliases = _master(store)
         batch_id = store.start_batch(str(root))
-        analyzed = _classify(_analyze_pdf(source_pdf, root, date_folder, unit), customers, aliases)
+        analyzed = _classify(_analyze_pdf(source_pdf, root, date_folder, unit), customers, aliases, blocked)
         analyzed["batch_id"] = batch_id
         row = store.upsert_analysis(analyzed)
         if row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
@@ -520,7 +530,7 @@ def import_corrections(csv_path: Path, output_root: Path):
     store = Store(output_root / "invoice_processor.db")
     results = []
     try:
-        store.seed(load_official_customers())
+        _apply_master(store)
         touched = []
         for incoming in read_corrections(csv_path):
             document_id = (incoming.get("Document ID") or "").strip()

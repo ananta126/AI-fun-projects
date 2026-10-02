@@ -76,7 +76,7 @@ def render_ui():
             - Finds nested `DD-MMM-YY` day folders
             - Reads ONLY page 1 of each invoice PDF
             - OCRs only the GST header when page 1 has no usable text
-            - Creates a folder only for an approved customer in customers.txt or an alias
+            - Creates a folder only for a customer in the mapping workbook or an approved alias
             - Year folder comes from the scan-date folder (`01-Sep-26` → 2026)
             - Keeps the source day folder name as-is under that year
             - Unmatched customers go to the review CSV and are not filed until corrected

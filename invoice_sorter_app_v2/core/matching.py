@@ -113,7 +113,12 @@ def _official_name(customers: list[CustomerRef], customer_id: str) -> str:
     return ""
 
 
-def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[AliasRef]) -> MatchResult:
+def match_customer(
+    raw_text: str,
+    customers: list[CustomerRef],
+    aliases: list[AliasRef],
+    blocked: frozenset[str] | set[str] | None = None,
+) -> MatchResult:
     normalized = normalize_customer(raw_text)
     hay = normalized.split()
     empty = MatchResult(
@@ -121,6 +126,12 @@ def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[Al
     )
     if not hay:
         return empty
+    # Review Required spellings stay unfiled. A shorter approved alias or a
+    # high fuzzy score must not override that sheet.
+    if blocked and normalized in blocked:
+        return MatchResult(
+            False, None, None, "REVIEW_LIST", None, None, None, None, "CUSTOMER_NOT_MATCHED", normalized,
+        )
 
     exact: list[tuple[int, str, str, str]] = []
     for customer in customers:

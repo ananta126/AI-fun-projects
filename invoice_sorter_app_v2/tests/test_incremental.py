@@ -11,7 +11,9 @@ import fitz
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from core.customer_master import load_customer_master  # noqa: E402
 from core.db import Store  # noqa: E402
+from core.matching import AliasRef, CustomerRef, match_customer, normalize_customer  # noqa: E402
 from core.pipeline import import_corrections  # noqa: E402
 from core.sorter import load_official_customers, process, year_from_scan_folder  # noqa: E402
 from tests.pdf_fixtures import invoice_page_text, write_text_pdf  # noqa: E402
@@ -233,3 +235,58 @@ def test_three_days_share_one_customer_year(tmp_path):
     assert {path.name for path in year.iterdir()} == {"01-Sep-26", "02-Sep-26", "03-Sep-26"}
     for day, number in (("01-Sep-26", "20262500111"), ("02-Sep-26", "20262500222"), ("03-Sep-26", "20262500333")):
         assert (year / day / f"{number}.pdf").is_file()
+
+
+def test_every_review_required_spelling_stays_unmatched():
+    master = load_customer_master()
+    customers = [
+        CustomerRef(item.customer_id, item.official_name, normalize_customer(item.official_name))
+        for item in master.customers
+    ]
+    aliases = [
+        AliasRef(normalize_customer(item.alias), item.customer_id, item.alias)
+        for item in master.aliases
+    ]
+    accepted = [
+        norm for norm in master.review_norms
+        if match_customer(norm, customers, aliases, master.review_norms).accepted
+    ]
+    assert accepted == []
+
+
+def test_workbook_alias_files_under_official_id(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    _invoice(
+        input_root / "01-Sep-26" / "Invoice" / "ace.pdf",
+        "20262500701",
+        "ACE INOTEC MANUFACTURING PVT. LTD",
+    )
+    results = process(input_root, output_root)
+    assert results[0]["status"] == "COPIED"
+    assert results[0]["customer_id"] == "C004"
+    assert (output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026" / "01-Sep-26" / "20262500701.pdf").is_file()
+    store = Store(output_root / "invoice_processor.db")
+    porite = store.customer_by_name("Porite India Pvt. Ltd.")
+    assert porite["customer_id"] == "C071"
+    store.close()
+
+
+def test_review_list_spellings_are_not_filed(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    _invoice(
+        input_root / "01-Sep-26" / "Invoice" / "review.pdf",
+        "20262500702",
+        "VARROC ENGINEERING ILTD",
+    )
+    _invoice(
+        input_root / "01-Sep-26" / "Invoice" / "creative.pdf",
+        "20262500703",
+        "CREATIVE CARVE PVT LTD",
+    )
+    results = process(input_root, output_root)
+    assert {row["status"] for row in results} == {"REVIEW"}
+    assert {row["reason_code"] for row in results} == {"CUSTOMER_NOT_MATCHED"}
+    assert list(output_root.rglob("*.pdf")) == []
+    assert not (input_root / "01-Sep-26_done").exists()

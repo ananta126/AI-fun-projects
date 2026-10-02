@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY customers.txt .
+COPY customer_master_alias_mapping.xlsx .
 COPY core core
 COPY .streamlit .streamlit
 
