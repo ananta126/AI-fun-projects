@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.pipeline import import_corrections  # noqa: E402
+from core.review_csv import REVIEW_CSV_NAME  # noqa: E402
 from core.sorter import EXCEPTION_REPORT_NAME, process  # noqa: E402
 
 
@@ -62,7 +64,8 @@ class InvoiceSorterWindow(QMainWindow):
 
         intro = QLabel(
             "Desktop app — no browser. Each PDF is one invoice. Page 1 is read; "
-            "the whole file is copied to Customer / printed year / source day / GST invoice no.pdf"
+            "the whole file is copied to Customer / year from the scan folder / source day / GST invoice no.pdf. "
+            "Unknown customers stay in the review CSV until you fill Correct Customer ID."
         )
         intro.setWordWrap(True)
 
@@ -72,6 +75,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.output_edit.setPlaceholderText(r"C:\Invoices\Output")
         self._output_root = None
         self._report_path = None
+        self._review_path = None
 
         browse_zip = QPushButton("Choose zip")
         browse_zip.clicked.connect(self._browse_zip)
@@ -100,15 +104,25 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_report_button = QPushButton("Open Excel report")
         self.open_report_button.setEnabled(False)
         self.open_report_button.clicked.connect(self._open_report)
+        self.open_review_button = QPushButton("Open review CSV")
+        self.open_review_button.setEnabled(False)
+        self.open_review_button.clicked.connect(self._open_review)
+        self.import_button = QPushButton("Import corrections")
+        self.import_button.clicked.connect(self._import_corrections)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        self.status = QLabel("Ready. PIS folders are ignored. Choose a month zip or folder, then Sort.")
+        self.status = QLabel(
+            "Ready. PIS folders are ignored. Year comes from the scan-date folder (01-Sep-26 → 2026). "
+            "Finished source folders are renamed with _done."
+        )
         self.status.setWordWrap(True)
 
         actions = QHBoxLayout()
         actions.addWidget(self.run_button)
         actions.addWidget(self.open_output_button)
         actions.addWidget(self.open_report_button)
+        actions.addWidget(self.open_review_button)
+        actions.addWidget(self.import_button)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -158,6 +172,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.run_button.setEnabled(False)
         self.open_output_button.setEnabled(False)
         self.open_report_button.setEnabled(False)
+        self.open_review_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -186,16 +201,22 @@ class InvoiceSorterWindow(QMainWindow):
         self.run_button.setEnabled(True)
         self.open_output_button.setEnabled(self._output_root is not None)
         self._report_path = None
+        self._review_path = None
         if self._output_root is not None:
             report = self._output_root / EXCEPTION_REPORT_NAME
             if report.exists():
                 self._report_path = report
+            review_csv = self._output_root / REVIEW_CSV_NAME
+            if review_csv.exists():
+                self._review_path = review_csv
         self.open_report_button.setEnabled(self._report_path is not None)
+        self.open_review_button.setEnabled(self._review_path is not None)
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
+        failed = sum(r.get("status") == "FAILED" for r in results)
         skipped = sum(r.get("status") == "SKIPPED" for r in results)
-        status = f"Done. Copied {copied}, review {review}, skipped {skipped}."
+        status = f"Done. Copied {copied}, review {review}, failed {failed}, skipped {skipped}."
         if self._report_path:
             status += f" Excel report: {self._report_path.name}"
         self.status.setText(status)
@@ -231,6 +252,28 @@ class InvoiceSorterWindow(QMainWindow):
         if self._report_path is None:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._report_path)))
+
+    def _open_review(self):
+        if self._review_path is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._review_path)))
+
+    def _import_corrections(self):
+        if self._output_root is None:
+            QMessageBox.warning(self, "Output missing", "Sort a batch before importing corrections.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Corrections CSV", "", "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            results = import_corrections(Path(path), self._output_root)
+        except Exception as exc:  # noqa: BLE001 — show the import error in the window
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+        self._on_finished(results)
+        copied = sum(item.get("status") == "COPIED" for item in results)
+        review = sum(item.get("status") == "REVIEW" for item in results)
+        self.status.setText(f"Corrections applied. Copied {copied}, still in review {review}. OCR was not repeated.")
 
     def _cleanup_worker(self):
         if self._worker is not None:

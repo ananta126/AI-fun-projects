@@ -131,10 +131,12 @@ def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
     assert copied[0]["customer"] == "Porite India Pvt. Ltd"
     assert copied[0]["source_pages"] == "1-3"
 
-    destination = output_root / "Porite India Pvt. Ltd" / "2024" / "25-Jun-26" / "20242500788.pdf"
+    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf"
+    done_source = input_root / "25-Jun-26_done" / "Invoice" / "3344.pdf"
     assert destination.exists()
-    assert destination.stat().st_size == source.stat().st_size
-    assert source.exists()
+    assert done_source.exists()
+    assert destination.stat().st_size == done_source.stat().st_size
+    assert not source.exists()
 
 
 def test_process_does_not_scan_supporting_pages(tmp_path, monkeypatch):
@@ -247,15 +249,30 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     output_root = tmp_path / "Output"
     invoice_dir = input_root / "25-Jun-26" / "Invoice"
     write_text_pdf(invoice_dir / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
+    import fitz
+
+    other = invoice_dir / "3345.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), SAMPLE_PAGE + "GSTIN : 27AABCP1234A1Z5\nExtra line so this file is not the same bytes.\n")
+    doc.save(other)
+    doc.close()
 
     first = process(input_root, output_root)
-    second = process(input_root, output_root)
+    # Run again only if the day was not marked _done. Two files share one invoice number,
+    # so the day stays open and the second file must not overwrite the first.
+    second_file_results = [row for row in first if row["source_file"].endswith("3345.pdf")]
+    first_file_results = [row for row in first if row["source_file"].endswith("3344.pdf")]
+    first = first_file_results
+    second = second_file_results
 
     assert first[0]["status"] == "COPIED"
-    assert second[0]["status"] == "COPIED"
-    dest_dir = output_root / "Porite India Pvt. Ltd" / "2024" / "25-Jun-26"
+    assert second[0]["status"] == "REVIEW"
+    assert second[0]["reason_code"] == "DUPLICATE_DESTINATION"
+    dest_dir = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
     assert (dest_dir / "20242500788.pdf").exists()
-    assert (dest_dir / "20242500788__DUPLICATE.pdf").exists()
+    assert not (dest_dir / "20242500788__DUPLICATE.pdf").exists()
+    assert not (input_root / "25-Jun-26_done").exists()
 
 
 def test_nested_june_folder_creates_customer_then_day(tmp_path):
@@ -280,8 +297,11 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
         ("20242500686", "26-Jun-26"),
     }
     assert skipped[0]["date_folder"] == "27-Jun-26"
-    assert (output_root / "Porite India Pvt. Ltd" / "2024" / "25-Jun-26" / "20242500788.pdf").exists()
-    assert (output_root / "Porite India Pvt. Ltd" / "2024" / "26-Jun-26" / "20242500686.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "26-Jun-26" / "20242500686.pdf").exists()
+    assert (input_root / "25-Jun-26_done").is_dir()
+    assert (input_root / "27-Jun-26" / "PIS").is_dir()
+    assert not (input_root / "27-Jun-26_done").exists()
 
 
 def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
@@ -329,7 +349,7 @@ def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
 
     listing = zipfile.ZipFile(io.BytesIO(out_bytes)).namelist()
     assert any(name.endswith("20242500788.pdf") for name in listing)
-    assert any("Porite India Pvt. Ltd" in name and "/2024/" in name.replace("\\", "/") for name in listing)
+    assert any("Porite India Pvt. Ltd" in name and "/2026/" in name.replace("\\", "/") for name in listing)
 
 
 def test_zip_output_tree_empty(tmp_path):
@@ -344,7 +364,7 @@ def _ocr_available() -> bool:
         return False
 
 
-def test_output_year_comes_from_printed_date_not_source_folder(tmp_path):
+def test_output_year_comes_from_source_folder_not_printed_date(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     write_text_pdf(
@@ -355,14 +375,14 @@ def test_output_year_comes_from_printed_date_not_source_folder(tmp_path):
     results = process(input_root, output_root)
     copied = results[0]
     assert copied["status"] == "COPIED"
-    assert copied["year"] == "2024"
+    assert copied["year"] == "2026"
     assert copied["date_folder"] == "01-Sep-26"
-    destination = output_root / "Porite India Pvt. Ltd" / "2024" / "01-Sep-26" / "20242500788.pdf"
+    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20242500788.pdf"
     assert destination.exists()
-    assert not (output_root / "Porite India Pvt. Ltd" / "2026").exists()
+    assert not (output_root / "Porite India Pvt. Ltd" / "2024").exists()
 
 
-def test_missing_printed_date_is_review(tmp_path):
+def test_missing_printed_date_still_uses_source_year(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     page = (
@@ -383,10 +403,10 @@ def test_missing_printed_date_is_review(tmp_path):
     doc.close()
 
     results = process_invoice_file(pdf_path, input_root, output_root)
-    assert results[0]["status"] == "REVIEW"
+    assert results[0]["status"] == "COPIED"
     assert results[0]["invoice_number"] == "20242500788"
-    assert "date" in results[0]["reason"].lower()
-    assert not list(output_root.rglob("*.pdf"))
+    assert results[0]["year"] == "2026"
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf").exists()
 
 
 @pytest.mark.skipif(not _ocr_available(), reason="RapidOCR is not installed")

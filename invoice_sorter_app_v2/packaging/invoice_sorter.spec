@@ -15,6 +15,10 @@ datas = [
 binaries = []
 hiddenimports = [
     "core.sorter",
+    "core.db",
+    "core.matching",
+    "core.pipeline",
+    "core.review_csv",
     "ui.desktop",
     "fitz",
     "pymupdf",

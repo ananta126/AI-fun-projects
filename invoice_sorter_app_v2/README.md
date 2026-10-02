@@ -33,9 +33,12 @@ Output/
       01-Sep-26/
         INVOICE_NUMBER.pdf
 
-`YYYY` is the **printed invoice date** on page 1, not the source folder year.
-The source day folder name is kept as-is (`01-Sep-26`, not rewritten). If the
-printed date cannot be read, the file is `REVIEW` and is not copied.
+`YYYY` comes from the **source scan-date folder** (`01-Sep-26` → 2026), not
+from the printed invoice date. The source day folder name is kept as-is.
+If that folder has no parseable year, the file is `REVIEW` and is not copied.
+Unknown billed-to names are not given a new folder; correct them in
+`invoice_sorter_review.csv` and use Import corrections (no second OCR).
+A source folder is renamed with `_done` only after every invoice in it copied.
 
 You can point the app at:
 

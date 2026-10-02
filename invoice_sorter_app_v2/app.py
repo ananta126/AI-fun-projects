@@ -63,8 +63,8 @@ def render_ui():
     st.set_page_config(page_title="Invoice Sorter", page_icon="📁", layout="wide")
     st.title("📁 Invoice Sorter")
     st.write(
-        "Read page 1 → identify invoice, billed-to customer, and printed date → "
-        "copy the complete PDF into Customer / year / source-day."
+        "Read page 1 → identify billed-to customer and GST invoice number → "
+        "copy the complete PDF into Customer / year from the scan folder / source-day."
     )
 
     with st.sidebar:
@@ -76,10 +76,10 @@ def render_ui():
             - Finds nested `DD-MMM-YY` day folders
             - Reads ONLY page 1 of each invoice PDF
             - OCRs only the GST header when page 1 has no usable text
-            - Creates a folder from the billed-to name in customers.txt
-            - Year folder is the **printed invoice date**, not the source folder year
+            - Creates a folder only for an approved customer in customers.txt or an alias
+            - Year folder comes from the scan-date folder (`01-Sep-26` → 2026)
             - Keeps the source day folder name as-is under that year
-            - Flags uncertain files (including missing printed dates)
+            - Unmatched customers go to the review CSV and are not filed until corrected
             """
         )
 

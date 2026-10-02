@@ -5,7 +5,6 @@ import shutil
 import sys
 import threading
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from pathlib import Path
 
@@ -19,7 +18,6 @@ OCR_SCALE = 1.2
 OCR_RETRY_SCALE = 1.7
 HEADER_FRACTION = 0.4
 HEADER_TALL_FRACTION = 0.55
-_OUTPUT_LOCK = threading.Lock()
 _PADDLE_LOCK = threading.Lock()
 _PADDLE_ENGINE = None
 _RAPID_LOCAL = threading.local()
@@ -151,6 +149,24 @@ def parse_date_folder(folder_name: str):
             return datetime.strptime(folder_name, fmt).date()
         except ValueError:
             pass
+    return None
+
+
+def year_from_scan_folder(folder_name: str) -> int | None:
+    """Output year comes from the source scan-date folder, not the printed invoice date.
+
+    ``01-Sep-26`` → 2026, ``03-Jan-27`` → 2027. ``25 September`` has no year and
+    returns None so the document goes to REVIEW.
+    """
+    parsed = parse_date_folder(folder_name)
+    if parsed:
+        return parsed.year
+    text = (folder_name or "").strip()
+    for fmt in ("%d %B %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(text, fmt).year
+        except ValueError:
+            continue
     return None
 
 
@@ -420,6 +436,20 @@ def match_official_customer(text: str):
     return None
 
 
+def billed_to_region(text: str) -> str:
+    """Billed-to block from page 1, without the label itself."""
+    text = normalize_ocr_text(text)
+    billed = re.search(
+        r"(?:Details\s+Of\s+Recipient|Billed\s+to)(.*?)(?:Consignee|GSTIN|Place\s+of\s+Supply|Invoice\s*No|$)",
+        text,
+        flags=re.I | re.S,
+    )
+    if not billed:
+        return ""
+    region = re.sub(r"(?i)\bbilled\s+to\b", " ", billed.group(1))
+    return re.sub(r"\s+", " ", region).strip(" ,:-()")
+
+
 def extract_customer_name(text: str):
     """Billed-to customer, using the official list when OCR matches it."""
     official = match_official_customer(text)
@@ -506,94 +536,52 @@ def date_folder_name_for(path: Path, root: Path) -> str:
     return path.parent.parent.name
 
 
-def _review_result(source_pdf, root, page_count, invoice_no, customer, date_folder, invoice_date, reason):
-    return [{
-        "status": "REVIEW",
-        "source_file": str(source_pdf.relative_to(root)),
-        "source_pages": f"1-{page_count}" if page_count else "",
-        "invoice_number": invoice_no or "",
-        "customer": customer or "",
-        "date_folder": date_folder,
-        "year": str(invoice_date.year) if invoice_date else "",
-        "reason": reason,
-    }]
-
-
 def process_invoice_file(source_pdf: Path, root: Path, output_root: Path):
-    """Identify an invoice from page 1 and copy the COMPLETE source PDF."""
-    first_page_text, page_count = ocr_first_page(source_pdf)
-    invoice_no = extract_invoice_number(first_page_text)
-    customer = extract_customer_name(first_page_text)
-    invoice_date = extract_invoice_date(first_page_text)
+    """Identify an invoice from page 1 and copy the COMPLETE source PDF when it is safe."""
+    from core.pipeline import run_one
 
-    if not invoice_no or not customer or not invoice_date:
-        retried_text = retry_ocr_first_page(source_pdf, first_page_text)
-        if retried_text != first_page_text:
-            first_page_text = retried_text
-            invoice_no = extract_invoice_number(first_page_text)
-            customer = extract_customer_name(first_page_text)
-            invoice_date = extract_invoice_date(first_page_text)
+    return run_one(source_pdf, root, output_root)
 
-    date_folder = date_folder_name_for(source_pdf, root)
 
-    if not invoice_no or not customer:
-        return _review_result(
-            source_pdf,
-            root,
-            page_count,
-            invoice_no,
-            customer,
-            date_folder,
-            invoice_date,
-            "Could not confidently extract invoice number/customer from page 1",
-        )
-    if not invoice_date:
-        return _review_result(
-            source_pdf,
-            root,
-            page_count,
-            invoice_no,
-            customer,
-            date_folder,
-            invoice_date,
-            "Could not confidently extract printed invoice date from page 1",
-        )
-
-    customer = safe_name(customer)
-    invoice_no = safe_name(invoice_no)
-    year_folder = str(invoice_date.year)
-    destination_dir = output_root / customer / year_folder / date_folder
-
-    with _OUTPUT_LOCK:
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / f"{invoice_no}.pdf"
-        if destination.exists():
-            destination = destination_dir / f"{invoice_no}__DUPLICATE.pdf"
-        # Copy the original package intact. No PDF splitting/re-writing is needed.
-        shutil.copy2(source_pdf, destination)
-
-    return [{
-        "status": "COPIED",
-        "source_file": str(source_pdf.relative_to(root)),
-        "source_pages": f"1-{page_count}" if page_count else "",
-        "invoice_number": invoice_no,
-        "customer": customer,
-        "date_folder": date_folder,
-        "year": year_folder,
-        "destination": str(destination),
-        "reason": "",
-    }]
+def is_scan_date_folder(path: Path) -> bool:
+    """A scan batch folder: ``01-Sep-26`` or any folder that directly contains Invoice/."""
+    if not path.is_dir() or path.name.lower() == "invoice" or path.name.endswith("_done"):
+        return False
+    if any(parent.name.endswith("_done") for parent in path.parents):
+        return False
+    if DATE_FOLDER_RE.match(path.name):
+        return True
+    return invoice_child(path) is not None
 
 
 def find_date_folders(root: Path):
-    folders = [
-        p for p in root.rglob("*")
-        if p.is_dir() and DATE_FOLDER_RE.match(p.name)
-    ]
+    root = Path(root)
+    found = []
+    if root.is_dir() and is_scan_date_folder(root):
+        found.append(root)
+    if root.is_dir():
+        for path in root.rglob("*"):
+            if path.is_dir() and is_scan_date_folder(path):
+                found.append(path)
+    found_set = set(found)
+    chosen = [path for path in found if not any(parent in found_set for parent in path.parents)]
     return sorted(
-        folders,
-        key=lambda p: (parse_date_folder(p.name) or datetime.min.date(), str(p)),
+        chosen,
+        key=lambda path: (parse_date_folder(path.name) or datetime.min.date(), str(path)),
     )
+
+
+def invoice_child(date_folder: Path):
+    if not date_folder.is_dir():
+        return None
+    try:
+        children = list(date_folder.iterdir())
+    except OSError:
+        return None
+    for child in children:
+        if child.is_dir() and child.name.lower() == "invoice":
+            return child
+    return None
 
 
 def invoice_pdfs_in(date_folder: Path):
@@ -665,7 +653,7 @@ def write_exception_report(results, dest) -> Path | None:
     from openpyxl.utils import get_column_letter
 
     copied = sum(r.get("status") == "COPIED" for r in results)
-    review = _report_rows(results, {"REVIEW"})
+    review = _report_rows(results, {"REVIEW", "FAILED"})
     skipped = _report_rows(results, {"SKIPPED"})
 
     wb = Workbook()
@@ -714,60 +702,10 @@ def exception_report_bytes(results) -> bytes:
 
 
 def process(root: Path, output_root: Path, progress=None):
-    root = resolve_input(root)
-    results = []
-    jobs = []
+    """Analyze the batch, copy safe matches, and mark finished source folders _done."""
+    from core.pipeline import run_batch
 
-    for date_folder in find_date_folders(root):
-        pdfs = invoice_pdfs_in(date_folder)
-        if pdfs is None:
-            results.append({
-                "status": "SKIPPED",
-                "source_file": "",
-                "date_folder": date_folder.name,
-                "reason": "Invoice folder not found",
-            })
-            continue
-        jobs.extend(pdfs)
-
-    def _run(pdf):
-        try:
-            return process_invoice_file(pdf, root, output_root)
-        except Exception as exc:  # noqa: BLE001 — file still appears on the Excel report
-            return [{
-                "status": "REVIEW",
-                "source_file": str(pdf.relative_to(root)),
-                "source_pages": "",
-                "invoice_number": "",
-                "customer": "",
-                "date_folder": date_folder_name_for(pdf, root),
-                "year": "",
-                "reason": f"Could not read file: {exc}",
-            }]
-
-    total = len(jobs)
-    if jobs:
-        workers = min(worker_count(), total)
-        if workers == 1:
-            for index, pdf in enumerate(jobs, start=1):
-                if progress:
-                    progress(index - 1, total, pdf.name)
-                results.extend(_run(pdf))
-                if progress:
-                    progress(index, total, pdf.name)
-        else:
-            done = 0
-            if progress:
-                progress(0, total, jobs[0].name)
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                for file_results in pool.map(_run, jobs):
-                    results.extend(file_results)
-                    done += 1
-                    if progress:
-                        progress(done, total, "")
-    output_root.mkdir(parents=True, exist_ok=True)
-    write_exception_report(results, output_root / EXCEPTION_REPORT_NAME)
-    return results
+    return run_batch(root, output_root, progress=progress, execute=True)
 
 
 def zip_output_tree(output_root: Path) -> bytes:

@@ -15,13 +15,15 @@ UIs only call `process()` / `process_uploaded_zip()`; they do not re-implement e
 | Read page 1 only | `ocr_first_page` uses `doc[0]` only. Pages 2+ are never rendered. |
 | Nested input `DD-MMM-YY/Invoice/` | `find_date_folders` + `invoice_pdfs_in` |
 | Ignore PIS | A day folder without a child named `Invoice` (any case) is `SKIPPED`. PIS PDFs are never listed as jobs. |
-| Output `Customer / YYYY / source-day / invoice.pdf` | Built in `process_invoice_file` |
-| Year = printed invoice date | `extract_invoice_date` → `year_folder = str(invoice_date.year)` |
-| Missing printed date → REVIEW | Second REVIEW branch in `process_invoice_file` |
-| Source day folder kept as-is | `date_folder_name_for` returns the folder **name string**, not a reformatted date |
-| Duplicate dest → `__DUPLICATE.pdf` | If `{invoice_no}.pdf` exists, copy to `{invoice_no}__DUPLICATE.pdf` (one suffix only) |
-| Uncertain → REVIEW | No copy. Row goes to Excel `Could_not_read` |
-| Customer = billed-to, official list | `customers.txt` via `match_official_customer` |
+| Output `Customer / YYYY / source-day / invoice.pdf` | `execute_document` in `core/pipeline.py` |
+| Year = source scan folder | `year_from_scan_folder` (`01-Sep-26` → 2026). Printed date is not the folder year |
+| Unparseable scan folder → REVIEW | Reason `SOURCE_YEAR_NOT_DETECTED`. No guessed year |
+| Source day folder kept as-is | Destination uses the folder name string, including `01-Sep-26` |
+| Duplicate dest → REVIEW | Existing `{invoice}.pdf` is not overwritten and `__DUPLICATE.pdf` is not written |
+| Uncertain → REVIEW | No copy. Excel `Could_not_read` and `invoice_sorter_review.csv` |
+| Customer = billed-to customer id | `customers.txt` seeded into SQLite. Exact phrase, then approved alias, then strict fuzzy |
+| Unknown customer | No folder. `CUSTOMER_NOT_MATCHED` until the review CSV supplies Correct Customer ID |
+| Resume | Completed source units are renamed `*_done` and skipped. State is `invoice_processor.db` |
 | Rapid Machining folder spelling | Official list line `Rapid Machining Tech.Pvt.Ltd.` |
 | Porite folder spelling | Official list line `Porite India Pvt. Ltd.` |
 | Do not use street `182` as customer | `_usable_customer_name` rejects `^\d+\s*,` and all-digit names |
