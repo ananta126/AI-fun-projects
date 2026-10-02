@@ -46,6 +46,31 @@ def _clean(value) -> str:
     return " ".join(str(value or "").replace("\xa0", " ").split()).strip()
 
 
+def alias_sheet_rows(path: Path | None = None) -> list[dict]:
+    """Every Alias Master row, in sheet order, including repeated spellings."""
+    path = Path(path) if path else master_path()
+    if not path.is_file():
+        return []
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        rows = []
+        for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
+            if not row or not row[2]:
+                continue
+            score = row[3] if len(row) > 3 and row[3] is not None else ""
+            rows.append({
+                "customer_id": _clean(row[0]),
+                "official_name": _clean(row[1]),
+                "alias": _clean(row[2]),
+                "match_score": score,
+            })
+        return rows
+    finally:
+        workbook.close()
+
+
 def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
     """Return the workbook, or None when it is not next to the app."""
     path = Path(path) if path else master_path()

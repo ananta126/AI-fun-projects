@@ -266,6 +266,9 @@ def test_workbook_alias_files_under_official_id(tmp_path):
     assert results[0]["status"] == "COPIED"
     assert results[0]["customer_id"] == "C004"
     assert (output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026" / "01-Sep-26" / "20262500701.pdf").is_file()
+    mapping = (output_root / "customer_alias_mapping.csv").read_text(encoding="utf-8-sig")
+    assert "ACE INOTEC MANUFACTURING PVT. LTD" in mapping
+    assert mapping.count("\n") == 116  # header plus every Alias Master row
     store = Store(output_root / "invoice_processor.db")
     porite = store.customer_by_name("Porite India Pvt. Ltd.")
     assert porite["customer_id"] == "C071"

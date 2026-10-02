@@ -25,7 +25,8 @@ Invoice Sorter — how to run (no Python)
 
 6. Files that could not be filed are in invoice_sorter_review.csv
    (Open review CSV). Fill Correct Customer ID using customer_ids.csv
-   (Open customer list). Leave invoice number and year blank if they
+   (Open customer list). Open alias mapping shows the approved OCR spellings
+   from customer_alias_mapping.csv. Leave invoice number and year blank if they
    are already correct. Save the CSV, then click Import corrections.
    That step does not OCR the file again.
 

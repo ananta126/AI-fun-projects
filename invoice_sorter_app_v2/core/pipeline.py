@@ -9,9 +9,11 @@ from core.customer_master import load_customer_master
 from core.db import Store
 from core.matching import AliasRef, CustomerRef, match_customer
 from core.review_csv import (
+    ALIAS_MAPPING_NAME,
     CUSTOMER_LIST_NAME,
     REVIEW_CSV_NAME,
     read_corrections,
+    write_alias_mapping,
     write_customer_list,
     write_review_csv,
 )
@@ -361,6 +363,7 @@ def _write_reports(store: Store, output_root: Path, extra_results: list[dict]):
     write_exception_report(results, output_root / EXCEPTION_REPORT_NAME)
     write_review_csv(store.review_documents(), output_root / REVIEW_CSV_NAME)
     write_customer_list(store.customers(), output_root / CUSTOMER_LIST_NAME)
+    write_alias_mapping(output_root / ALIAS_MAPPING_NAME)
     return results
 
 

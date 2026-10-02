@@ -8,6 +8,7 @@ from pathlib import Path
 
 REVIEW_CSV_NAME = "invoice_sorter_review.csv"
 CUSTOMER_LIST_NAME = "customer_ids.csv"
+ALIAS_MAPPING_NAME = "customer_alias_mapping.csv"
 
 REVIEW_COLUMNS = [
     "Document ID",
@@ -82,6 +83,33 @@ def write_customer_list(customers, dest: Path) -> Path:
             writer.writerow({
                 "Customer ID": row["customer_id"],
                 "Official Customer Name": row["official_name"],
+            })
+    return dest
+
+
+def write_alias_mapping(dest: Path, aliases=None) -> Path:
+    """Write the Alias Master sheet the user can open.
+
+    When aliases is omitted, the rows come straight from the mapping workbook
+    so every spelling on that sheet is visible, including ones that collapse
+    to the same normalized text.
+    """
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    columns = ["Customer ID", "Official Customer", "Alias", "Match Score"]
+    with dest.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        if aliases is None:
+            from core.customer_master import alias_sheet_rows
+
+            aliases = alias_sheet_rows()
+        for row in aliases:
+            writer.writerow({
+                "Customer ID": row["customer_id"],
+                "Official Customer": row["official_name"],
+                "Alias": row["alias"],
+                "Match Score": row.get("match_score", ""),
             })
     return dest
 
