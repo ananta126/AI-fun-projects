@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from core.sorter import (  # noqa: E402
+    OcrLine,
+    billed_to_region,
+    customer_from_lines,
     extract_customer_name,
     extract_invoice_date,
     extract_invoice_number,
@@ -330,6 +333,66 @@ def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
     }
 
 
+def test_two_inner_units_under_same_day(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "2_2023" / "b.pdf",
+        invoices=[SAMPLE_INVOICES[1]],
+    )
+    results = process(input_root, output_root)
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert {(r["invoice_number"], r["date_folder"]) for r in copied} == {
+        ("20242500788", "25-Jun-26"),
+        ("20242500752", "25-Jun-26"),
+    }
+    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
+    assert (customer_day / "20242500788.pdf").exists()
+    assert (customer_day / "20242500752.pdf").exists()
+
+
+def test_zip_reextract_when_archive_updated(tmp_path):
+    import os
+    import time
+    import zipfile
+
+    bundle = tmp_path / "bundle"
+    day = bundle / "25-Jun-26" / "Invoice"
+    write_text_pdf(day / "2_2023" / "b.pdf", invoices=[SAMPLE_INVOICES[1]])
+    zip_path = tmp_path / "25-Jun-26.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+
+    output_root = tmp_path / "Output"
+    first = process(zip_path, output_root)
+    assert len([r for r in first if r["status"] == "COPIED"]) == 1
+    extract = tmp_path / "25-Jun-26_extracted"
+    assert (extract / ".invoice_sorter_zip_source").is_file()
+    assert not (extract / "25-Jun-26" / "Invoice" / "1_2024").exists()
+
+    write_text_pdf(day / "1_2024" / "a.pdf", invoices=[SAMPLE_INVOICES[0]])
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+    time.sleep(0.05)
+    os.utime(zip_path, (time.time(), time.time()))
+
+    from core.sorter import resolve_input
+
+    resolve_input(zip_path)
+    assert (extract / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf").is_file()
+
+    process(zip_path, output_root)
+    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
+    assert (customer_day / "20242500788.pdf").exists()
+    assert (customer_day / "20242500752.pdf").exists()
+
+
 def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
     import zipfile
 
@@ -416,3 +479,104 @@ def test_ocr_scanned_pdf_reads_only_first_page(tmp_path):
     assert len(page_texts) == 1
     assert page_texts[0][0] == 0
     assert extract_invoice_number(page_texts[0][1]) == "20242500788"
+
+
+def _line(text: str, x0: float, y0: float, x1: float, y1: float) -> OcrLine:
+    return OcrLine(text, (x0, y0, x1, y1), 0.9)
+
+
+def _hightemp_page_lines(*, billed_y: float = 120) -> list[OcrLine]:
+    """3874.pdf layout: seller letterhead above, customer under Billed to, consignee to the right."""
+    return [
+        _line("HIGHTEMP FURNACES LTD.", 40, 30, 280, 48),
+        _line("Email: pune@hightempfurnaces.com", 40, 62, 280, 76),
+        _line("GAT NO.615, VILLAGE IKURULI NEAR CHAKAN", 40, 78, 300, 92),
+        _line("Phone No:02135-639450 PANNo. AAACH1727L", 40, 94, 360, 108),
+        _line("GSTIN No. & GST Range : 27AAACH1727L1ZK", 400, 50, 700, 66),
+        _line("Invoice No. & Date : 20232400469 - 18/04/2023", 400, 28, 760, 44),
+        _line("Details Of Recipient (Billed to)", 40, billed_y, 280, billed_y + 16),
+        _line("RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)", 40, billed_y + 22, 420, billed_y + 38),
+        _line("182, SHIROLI MIDC KOLHAPUR, MAHARASHTRA, INDIA.", 40, billed_y + 40, 420, billed_y + 56),
+        _line("Consignee(Shipped to):", 460, billed_y, 700, billed_y + 16),
+        _line("OTHER CONSIGNEE PVT LTD", 460, billed_y + 22, 720, billed_y + 38),
+        _line("GSTIN/Unique ID : 27AAACR8959A1Z9", 40, billed_y + 64, 360, billed_y + 80),
+    ]
+
+
+def test_3874_layout_uses_billed_to_not_letterhead():
+    name = customer_from_lines(_hightemp_page_lines())
+    assert name == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    assert "HIGHTEMP" not in name
+    assert "AAACH1727L" not in name
+    assert "182" not in name
+    header = "\n".join(line.text for line in _hightemp_page_lines())
+    assert extract_invoice_number(header) == "20232400469"
+
+
+def test_customer_on_same_line_as_billed_to():
+    lines = [_line("Billed to PORITE INDIA PVT.LTD.", 40, 40, 400, 56)]
+    assert customer_from_lines(lines) == "PORITE INDIA PVT.LTD"
+
+
+def test_billed_to_label_tolerates_ocr_spelling():
+    lines = [
+        _line("HIGHTEMP FURNACES LTD.", 40, 20, 280, 36),
+        _line("Detalls Of Recipent (Billed t0)", 40, 80, 300, 96),
+        _line("RAPID MACHINING TECHNOLOGIES PVT LTD", 40, 104, 420, 120),
+    ]
+    assert customer_from_lines(lines) == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+
+
+def test_seller_at_top_is_not_the_customer():
+    assert "HIGHTEMP" not in customer_from_lines(_hightemp_page_lines())
+
+
+def test_address_after_customer_name_is_not_returned():
+    name = billed_to_region(
+        "Details Of Recipient (Billed to)\n"
+        "RAPID MACHINING TECHNOLOGIES PVT LTD\n"
+        "182, SHIROLI MIDC KOLHAPUR\n"
+    )
+    assert name == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    assert not name.startswith("182")
+
+
+def test_missing_billed_to_section_returns_nothing():
+    lines = [
+        _line("HIGHTEMP FURNACES LTD.", 40, 20, 280, 36),
+        _line("RAPID MACHINING TECHNOLOGIES PVT LTD", 40, 80, 420, 96),
+    ]
+    assert customer_from_lines(lines) == ""
+
+
+def test_billed_to_column_ignores_the_other_company():
+    name = customer_from_lines(_hightemp_page_lines())
+    assert name.startswith("RAPID MACHINING")
+    assert "OTHER CONSIGNEE" not in name
+
+
+def test_billed_to_section_can_sit_lower_on_the_page():
+    name = customer_from_lines(_hightemp_page_lines(billed_y=240))
+    assert name == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+
+
+def test_3874_pdf_page_one_customer_and_invoice_number():
+    import fitz
+
+    pdf_path = Path(__file__).resolve().parent / "fixtures" / "3874.pdf"
+    assert pdf_path.is_file()
+    doc = fitz.open(pdf_path)
+    assert len(doc) == 4
+    assert len(doc[0].get_text("text").strip()) < 40
+    doc.close()
+    if not _ocr_available():
+        pytest.skip("RapidOCR is not installed")
+    from core.sorter import ocr_first_page
+
+    text, page_count, lines = ocr_first_page(pdf_path)
+    assert page_count == 4
+    assert extract_invoice_number(text) == "20232400469"
+    customer = customer_from_lines(lines)
+    assert customer == "RAPID MACHINING TECHNOLOGIES PVT LTD"
+    assert "HIGHTEMP" not in customer
+    assert "AAACH1727L" not in customer

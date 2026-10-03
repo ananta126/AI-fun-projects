@@ -18,6 +18,10 @@ call .venv\Scripts\activate.bat
 python -m pip install -r requirements.txt -r requirements-desktop.txt
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm packaging\invoice_sorter.spec
+copy /Y customers.txt dist\InvoiceSorter\
+copy /Y customer_alias_mapping.csv dist\InvoiceSorter\
+copy /Y customer_master_alias_mapping.xlsx dist\InvoiceSorter\
+copy /Y packaging\HOW_TO_RUN.txt dist\InvoiceSorter\
 
 echo.
 echo Build finished. On Windows the EXE is dist\InvoiceSorter\InvoiceSorter.exe

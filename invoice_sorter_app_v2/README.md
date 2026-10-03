@@ -45,6 +45,11 @@ You can point the app at:
 - the extracted `June 26` folder, or
 - the zip (`June 26-20260831T053601Z-001.zip`)
 
+If a zip was sorted before and you add folders (for example `1_2024`) to a new
+download, delete the `{zipname}_extracted` folder beside the zip or use an
+updated zip file—the app re-extracts when the archive changes. For daily work,
+point Input at the extracted `DD-MMM-YY` day folder instead of the zip.
+
 Nested date folders are found automatically. PIS folders are left untouched.
 
 ## Windows desktop (recommended)
@@ -102,7 +107,7 @@ The app uses **RapidOCR on page 1 only** (GST header band). Supporting pages are
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
-Folder names come from `customers.txt` (the billed-to list in Summary.xlsx). OCR is matched to that list, so Rapid Machining invoices file as `Rapid Machining Tech.Pvt.Ltd.` rather than OCR spellings.
+Folder names and customer ids come from `customer_master_alias_mapping.xlsx`. Alias Master spellings are filed automatically. Review Required spellings stay in the review CSV. Rapid Machining invoices still file as `Rapid Machining Tech.Pvt.Ltd.`
 
 ## Install and run from source (no exe yet)
 

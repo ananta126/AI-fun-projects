@@ -29,8 +29,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.pipeline import import_corrections  # noqa: E402
-from core.review_csv import CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
-from core.sorter import EXCEPTION_REPORT_NAME, process  # noqa: E402
+from core.review_csv import ALIAS_MAPPING_NAME, CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
+from core.sorter import EXCEPTION_REPORT_NAME, app_root, process  # noqa: E402
 
 
 class SortWorker(QObject):
@@ -77,6 +77,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._report_path = None
         self._review_path = None
         self._customer_list_path = None
+        self._alias_mapping_path = app_root() / ALIAS_MAPPING_NAME
 
         browse_zip = QPushButton("Choose zip")
         browse_zip.clicked.connect(self._browse_zip)
@@ -111,6 +112,9 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_customers_button = QPushButton("Open customer list")
         self.open_customers_button.setEnabled(False)
         self.open_customers_button.clicked.connect(self._open_customers)
+        self.open_aliases_button = QPushButton("Open alias mapping")
+        self.open_aliases_button.setEnabled(self._alias_mapping_path.is_file())
+        self.open_aliases_button.clicked.connect(self._open_aliases)
         self.import_button = QPushButton("Import corrections")
         self.import_button.clicked.connect(self._import_corrections)
         self.progress = QProgressBar()
@@ -128,6 +132,7 @@ class InvoiceSorterWindow(QMainWindow):
         actions2 = QHBoxLayout()
         actions2.addWidget(self.open_review_button)
         actions2.addWidget(self.open_customers_button)
+        actions2.addWidget(self.open_aliases_button)
         actions2.addWidget(self.import_button)
 
         self.table = QTableWidget(0, 8)
@@ -181,6 +186,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_report_button.setEnabled(False)
         self.open_review_button.setEnabled(False)
         self.open_customers_button.setEnabled(False)
+        self.open_aliases_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -211,6 +217,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._report_path = None
         self._review_path = None
         self._customer_list_path = None
+        self._alias_mapping_path = app_root() / ALIAS_MAPPING_NAME
         if self._output_root is not None:
             report = self._output_root / EXCEPTION_REPORT_NAME
             if report.exists():
@@ -221,9 +228,13 @@ class InvoiceSorterWindow(QMainWindow):
             customers = self._output_root / CUSTOMER_LIST_NAME
             if customers.exists():
                 self._customer_list_path = customers
+            aliases = self._output_root / ALIAS_MAPPING_NAME
+            if aliases.exists():
+                self._alias_mapping_path = aliases
         self.open_report_button.setEnabled(self._report_path is not None)
         self.open_review_button.setEnabled(self._review_path is not None)
         self.open_customers_button.setEnabled(self._customer_list_path is not None)
+        self.open_aliases_button.setEnabled(self._alias_mapping_path.is_file())
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
@@ -276,6 +287,11 @@ class InvoiceSorterWindow(QMainWindow):
         if self._customer_list_path is None:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._customer_list_path)))
+
+    def _open_aliases(self):
+        if not self._alias_mapping_path.is_file():
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._alias_mapping_path)))
 
     def _import_corrections(self):
         if self._output_root is None:

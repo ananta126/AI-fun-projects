@@ -4,7 +4,8 @@ Invoice Sorter — how to run (no Python)
    The download is about 180 MB and expands to about 420 MB.
    If Windows says the zip is hundreds of GB, that number is wrong.
    Install 7-Zip (https://www.7-zip.org/) and extract with 7-Zip.
-   Keep every file next to InvoiceSorter.exe.
+   Keep every file next to InvoiceSorter.exe, including
+   customer_alias_mapping.csv and customer_master_alias_mapping.xlsx.
    Do not copy the .exe out by itself.
 
 2. Double-click InvoiceSorter.exe
@@ -25,7 +26,8 @@ Invoice Sorter — how to run (no Python)
 
 6. Files that could not be filed are in invoice_sorter_review.csv
    (Open review CSV). Fill Correct Customer ID using customer_ids.csv
-   (Open customer list). Leave invoice number and year blank if they
+   (Open customer list). Open alias mapping shows the approved OCR spellings
+   from customer_alias_mapping.csv. Leave invoice number and year blank if they
    are already correct. Save the CSV, then click Import corrections.
    That step does not OCR the file again.
 
