@@ -30,11 +30,10 @@ Output:
 Output/
   CUSTOMER NAME/
     YYYY/
-      01-Sep-26/
-        INVOICE_NUMBER.pdf
+      INVOICE_NUMBER.pdf
 
 `YYYY` comes from the **source scan-date folder** (`01-Sep-26` → 2026), not
-from the printed invoice date. The source day folder name is kept as-is.
+from the printed invoice date.
 If that folder has no parseable year, the file is `REVIEW` and is not copied.
 Unknown billed-to names are not given a new folder; correct them in
 `invoice_sorter_review.csv` and use Import corrections (no second OCR).

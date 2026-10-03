@@ -134,7 +134,7 @@ def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
     assert copied[0]["customer"] == "Porite India Pvt. Ltd"
     assert copied[0]["source_pages"] == "1-3"
 
-    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf"
+    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf"
     done_source = input_root / "25-Jun-26_done" / "Invoice" / "3344.pdf"
     assert destination.exists()
     assert done_source.exists()
@@ -272,7 +272,7 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     assert first[0]["status"] == "COPIED"
     assert second[0]["status"] == "REVIEW"
     assert second[0]["reason_code"] == "DUPLICATE_DESTINATION"
-    dest_dir = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
+    dest_dir = output_root / "Porite India Pvt. Ltd" / "2026"
     assert (dest_dir / "20242500788.pdf").exists()
     assert not (dest_dir / "20242500788__DUPLICATE.pdf").exists()
     assert not (input_root / "25-Jun-26_done").exists()
@@ -300,8 +300,8 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
         ("20242500686", "26-Jun-26"),
     }
     assert skipped[0]["date_folder"] == "27-Jun-26"
-    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf").exists()
-    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "26-Jun-26" / "20242500686.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "20242500686.pdf").exists()
     assert (input_root / "25-Jun-26_done").is_dir()
     assert (input_root / "27-Jun-26" / "PIS").is_dir()
     assert not (input_root / "27-Jun-26_done").exists()
@@ -350,9 +350,9 @@ def test_two_inner_units_under_same_day(tmp_path):
         ("20242500788", "25-Jun-26"),
         ("20242500752", "25-Jun-26"),
     }
-    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
-    assert (customer_day / "20242500788.pdf").exists()
-    assert (customer_day / "20242500752.pdf").exists()
+    customer_year = output_root / "Porite India Pvt. Ltd" / "2026"
+    assert (customer_year / "20242500788.pdf").exists()
+    assert (customer_year / "20242500752.pdf").exists()
 
 
 def test_zip_reextract_when_archive_updated(tmp_path):
@@ -388,9 +388,9 @@ def test_zip_reextract_when_archive_updated(tmp_path):
     assert (extract / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf").is_file()
 
     process(zip_path, output_root)
-    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
-    assert (customer_day / "20242500788.pdf").exists()
-    assert (customer_day / "20242500752.pdf").exists()
+    customer_year = output_root / "Porite India Pvt. Ltd" / "2026"
+    assert (customer_year / "20242500788.pdf").exists()
+    assert (customer_year / "20242500752.pdf").exists()
 
 
 def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
@@ -440,7 +440,7 @@ def test_output_year_comes_from_source_folder_not_printed_date(tmp_path):
     assert copied["status"] == "COPIED"
     assert copied["year"] == "2026"
     assert copied["date_folder"] == "01-Sep-26"
-    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20242500788.pdf"
+    destination = output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf"
     assert destination.exists()
     assert not (output_root / "Porite India Pvt. Ltd" / "2024").exists()
 
@@ -469,7 +469,7 @@ def test_missing_printed_date_still_uses_source_year(tmp_path):
     assert results[0]["status"] == "COPIED"
     assert results[0]["invoice_number"] == "20242500788"
     assert results[0]["year"] == "2026"
-    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26" / "20242500788.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf").exists()
 
 
 @pytest.mark.skipif(not _ocr_available(), reason="RapidOCR is not installed")

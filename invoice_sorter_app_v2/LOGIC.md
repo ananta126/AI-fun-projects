@@ -15,10 +15,9 @@ UIs only call `process()` / `process_uploaded_zip()`; they do not re-implement e
 | Read page 1 only | `ocr_first_page` uses `doc[0]` only. Pages 2+ are never rendered. |
 | Nested input `DD-MMM-YY/Invoice/` | `find_date_folders` + `invoice_pdfs_in` |
 | Ignore PIS | A day folder without a child named `Invoice` (any case) is `SKIPPED`. PIS PDFs are never listed as jobs. |
-| Output `Customer / YYYY / source-day / invoice.pdf` | `execute_document` in `core/pipeline.py` |
+| Output `Customer / YYYY / invoice.pdf` | `execute_document` in `core/pipeline.py` |
 | Year = source scan folder | `year_from_scan_folder` (`01-Sep-26` → 2026). Printed date is not the folder year |
 | Unparseable scan folder → REVIEW | Reason `SOURCE_YEAR_NOT_DETECTED`. No guessed year |
-| Source day folder kept as-is | Destination uses the folder name string, including `01-Sep-26` |
 | Duplicate dest → REVIEW | Existing `{invoice}.pdf` is not overwritten and `__DUPLICATE.pdf` is not written |
 | Uncertain → REVIEW | No copy. Excel `Could_not_read` and `invoice_sorter_review.csv` |
 | Customer = billed-to customer id | `customer_master_alias_mapping.xlsx` seeds ids, official names, and Alias Master. Review Required spellings are not filed. Then strict fuzzy |
@@ -69,7 +68,7 @@ flowchart TD
   G --> K{still missing no or customer?}
   K -->|yes| R[REVIEW no copy]
   K -->|no missing date?| L[REVIEW missing date]
-  K -->|complete| J[Customer / YYYY / source-day / invoice.pdf]
+  K -->|complete| J[Customer / YYYY / invoice.pdf]
   S --> X[write invoice_sorter_exceptions.xlsx]
   R --> X
   J --> X
@@ -200,7 +199,7 @@ Used in **tests**, not in `process_invoice_file`. Filing does **not** call this.
 5. Two-digit year: `< 50` → 2000+yy else 1900+yy. Years outside 1990–2099 rejected.
 6. Calendar validation via `date(year, month, day)` — Indian **DD/MM/YYYY** assumed (day first, then month).
 
-**Not used for YYYY:** source folder `01-Sep-26` (that would be 2026). Tests lock this: printed `29/04/2024` + folder `01-Sep-26` → `…/2024/01-Sep-26/`.
+**Not used for YYYY:** printed invoice date (e.g. `29/04/2024`). Tests lock this: folder `01-Sep-26` → `…/2026/{invoice}.pdf` even when the printed date is in 2024.
 
 **Bug hints:**
 
@@ -253,7 +252,7 @@ Regex for `… PVT LTD / LIMITED / LLP` in billed region then full page. Skip HI
 
 ### COPIED
 
-Path: `output_root / safe_name(customer) / str(year) / date_folder / {invoice_no}.pdf`
+Path: `output_root / safe_name(customer) / str(year) / {invoice_no}.pdf`
 
 `source_pages` is `"1-{page_count}"` meaning the **package** has that many pages, not that they were OCR’d.
 

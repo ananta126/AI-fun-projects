@@ -58,8 +58,8 @@ def test_alias_reuses_existing_customer_folder(tmp_path):
     assert len(copied) == 2
     assert {row["customer_id"] for row in copied} == {skf["customer_id"]}
     customer_dir = output_root / "SKF India Ltd.Pune" / "2026"
-    assert (customer_dir / "01-Sep-26" / "20262500111.pdf").exists()
-    assert (customer_dir / "02-Sep-26" / "20262500222.pdf").exists()
+    assert (customer_dir / "20262500111.pdf").exists()
+    assert (customer_dir / "20262500222.pdf").exists()
     assert len([path for path in output_root.iterdir() if path.is_dir()]) == 1
 
 
@@ -88,8 +88,8 @@ def test_new_year_creates_only_the_missing_year_folder(tmp_path):
     _invoice(input_root / "03-Jan-27" / "Invoice" / "b.pdf", "20272500111", "PORITE INDIA PVT.LTD.")
     process(input_root, output_root)
     customer = output_root / "Porite India Pvt. Ltd"
-    assert (customer / "2026" / "01-Sep-26" / "20262500111.pdf").exists()
-    assert (customer / "2027" / "03-Jan-27" / "20272500111.pdf").exists()
+    assert (customer / "2026" / "20262500111.pdf").exists()
+    assert (customer / "2027" / "20272500111.pdf").exists()
     assert {path.name for path in customer.iterdir()} == {"2026", "2027"}
 
 
@@ -101,9 +101,9 @@ def test_new_scan_date_reuses_customer_and_year(tmp_path):
     _invoice(input_root / "02-Sep-26" / "Invoice" / "b.pdf", "20262500222", "PORITE INDIA PVT.LTD.")
     process(input_root, output_root)
     year = output_root / "Porite India Pvt. Ltd" / "2026"
-    assert (year / "01-Sep-26" / "20262500111.pdf").exists()
-    assert (year / "02-Sep-26" / "20262500222.pdf").exists()
-    assert {path.name for path in year.iterdir()} == {"01-Sep-26", "02-Sep-26"}
+    assert (year / "20262500111.pdf").exists()
+    assert (year / "20262500222.pdf").exists()
+    assert {path.name for path in year.iterdir()} == {"20262500111.pdf", "20262500222.pdf"}
 
 
 def test_completed_subfolder_is_marked_done(tmp_path):
@@ -121,7 +121,7 @@ def test_restart_skips_done_folders(tmp_path):
     _invoice(input_root / "01-Sep-26" / "Invoice" / "a.pdf", "20262500111", "PORITE INDIA PVT.LTD.")
     first = process(input_root, output_root)
     assert first[0]["status"] == "COPIED"
-    dest = output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20262500111.pdf"
+    dest = output_root / "Porite India Pvt. Ltd" / "2026" / "20262500111.pdf"
     size = dest.stat().st_size
     second = process(input_root, output_root)
     assert [row for row in second if row.get("status") == "COPIED"] == []
@@ -178,7 +178,7 @@ def test_review_correction_does_not_rerun_ocr(tmp_path, monkeypatch):
     monkeypatch.setattr("core.pipeline.retry_first_page_read", _boom)
     corrected = import_corrections(csv_path, output_root)
     assert corrected[0]["status"] == "COPIED"
-    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20262500444.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2026" / "20262500444.pdf").exists()
 
 
 def test_duplicate_destination_is_not_overwritten(tmp_path):
@@ -195,7 +195,7 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     assert by_name["a.pdf"]["status"] == "COPIED"
     assert by_name["b.pdf"]["status"] == "REVIEW"
     assert by_name["b.pdf"]["reason_code"] == "DUPLICATE_DESTINATION"
-    dest = output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26"
+    dest = output_root / "Porite India Pvt. Ltd" / "2026"
     assert (dest / "20262500111.pdf").exists()
     assert not (dest / "20262500111__DUPLICATE.pdf").exists()
     assert not (input_root / "01-Sep-26_done").exists()
@@ -218,7 +218,7 @@ def test_supporting_pages_stay_in_the_copied_pdf(tmp_path, monkeypatch):
     process(input_root, output_root)
     assert calls == []  # embedded text is used; supporting pages are not rendered
     original = fitz.open(source if source.exists() else input_root / "01-Sep-26_done" / "Invoice" / "3344.pdf")
-    copied = fitz.open(output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20242500788.pdf")
+    copied = fitz.open(output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf")
     assert original.page_count == copied.page_count == 3
     original.close()
     copied.close()
@@ -232,9 +232,13 @@ def test_three_days_share_one_customer_year(tmp_path):
     process(input_root, output_root)
     year = output_root / "Porite India Pvt. Ltd" / "2026"
     assert {path.name for path in (output_root / "Porite India Pvt. Ltd").iterdir()} == {"2026"}
-    assert {path.name for path in year.iterdir()} == {"01-Sep-26", "02-Sep-26", "03-Sep-26"}
-    for day, number in (("01-Sep-26", "20262500111"), ("02-Sep-26", "20262500222"), ("03-Sep-26", "20262500333")):
-        assert (year / day / f"{number}.pdf").is_file()
+    assert {path.name for path in year.iterdir()} == {
+        "20262500111.pdf",
+        "20262500222.pdf",
+        "20262500333.pdf",
+    }
+    for _day, number in (("01-Sep-26", "20262500111"), ("02-Sep-26", "20262500222"), ("03-Sep-26", "20262500333")):
+        assert (year / f"{number}.pdf").is_file()
 
 
 def test_every_review_required_spelling_stays_unmatched():
@@ -265,7 +269,7 @@ def test_workbook_alias_files_under_official_id(tmp_path):
     results = process(input_root, output_root)
     assert results[0]["status"] == "COPIED"
     assert results[0]["customer_id"] == "C004"
-    assert (output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026" / "01-Sep-26" / "20262500701.pdf").is_file()
+    assert (output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026" / "20262500701.pdf").is_file()
     mapping = (output_root / "customer_alias_mapping.csv").read_text(encoding="utf-8-sig")
     assert "ACE INOTEC MANUFACTURING PVT. LTD" in mapping
     assert mapping.count("\n") == 116  # header plus every Alias Master row

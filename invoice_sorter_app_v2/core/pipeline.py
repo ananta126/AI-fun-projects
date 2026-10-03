@@ -258,12 +258,11 @@ def execute_document(store: Store, row, output_root: Path):
     official = row["official_name"]
     year = row["derived_year"]
     invoice_no = row["invoice_number"]
-    date_folder = row["date_folder"]
     if not official or not year or not invoice_no:
         return store.update_state(
             row["document_id"], "REVIEW_REQUIRED", "DESTINATION_ERROR", "Missing customer, year, or invoice number",
         )
-    dest_dir = Path(output_root) / safe_name(official) / str(year) / date_folder
+    dest_dir = Path(output_root) / safe_name(official) / str(year)
     dest = dest_dir / f"{safe_name(invoice_no)}.pdf"
     try:
         if dest.exists():
