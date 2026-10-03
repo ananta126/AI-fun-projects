@@ -175,7 +175,7 @@ def test_review_correction_does_not_rerun_ocr(tmp_path, monkeypatch):
         raise AssertionError("OCR ran during correction import")
 
     monkeypatch.setattr("core.pipeline.ocr_first_page", _boom)
-    monkeypatch.setattr("core.pipeline.retry_ocr_first_page", _boom)
+    monkeypatch.setattr("core.pipeline.retry_first_page_read", _boom)
     corrected = import_corrections(csv_path, output_root)
     assert corrected[0]["status"] == "COPIED"
     assert (output_root / "Porite India Pvt. Ltd" / "2026" / "01-Sep-26" / "20262500444.pdf").exists()

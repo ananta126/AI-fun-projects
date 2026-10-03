@@ -24,7 +24,7 @@ from core.sorter import (
     invoice_child,
     load_official_customers,
     ocr_first_page,
-    retry_ocr_first_page,
+    retry_first_page_read,
     safe_name,
     worker_count,
     write_exception_report,
@@ -125,15 +125,15 @@ def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     except ValueError:
         base["source_rel"] = pdf.name
     try:
-        text, page_count = ocr_first_page(pdf)
+        text, page_count, lines = ocr_first_page(pdf)
         invoice_no = extract_invoice_number(text)
-        raw = billed_to_region(text)
+        raw = billed_to_region(text, lines)
         if not invoice_no or not raw:
-            retried = retry_ocr_first_page(pdf, text)
+            retried, retried_lines = retry_first_page_read(pdf, text)
             if retried != text:
                 text = retried
                 invoice_no = extract_invoice_number(text) or invoice_no
-                raw = billed_to_region(text) or raw
+                raw = billed_to_region(text, retried_lines) or raw
     except Exception as exc:  # noqa: BLE001 — one bad PDF must not stop the batch
         base.update({
             "state": "FAILED",

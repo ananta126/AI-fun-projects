@@ -5,7 +5,9 @@ import shutil
 import sys
 import threading
 import zipfile
+from dataclasses import dataclass
 from datetime import date, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -21,6 +23,7 @@ HEADER_TALL_FRACTION = 0.55
 _PADDLE_LOCK = threading.Lock()
 _PADDLE_ENGINE = None
 _RAPID_LOCAL = threading.local()
+_OCR_LINES = threading.local()
 os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -120,11 +123,81 @@ def _paddle_result_to_text(result) -> str:
     return "\n".join(texts)
 
 
-def ocr_image_rapid(image: Image.Image) -> str:
+@dataclass(frozen=True)
+class OcrLine:
+    text: str
+    box: tuple[float, float, float, float]
+    score: float | None = None
+
+
+def _rect_from_box(box) -> tuple[float, float, float, float]:
+    arr = np.asarray(box, dtype=float)
+    if arr.size == 0:
+        return (0.0, 0.0, 0.0, 0.0)
+    if arr.ndim == 1 and arr.size == 4:
+        return (float(arr[0]), float(arr[1]), float(arr[2]), float(arr[3]))
+    pts = arr.reshape(-1, 2)
+    return (
+        float(pts[:, 0].min()),
+        float(pts[:, 1].min()),
+        float(pts[:, 0].max()),
+        float(pts[:, 1].max()),
+    )
+
+
+def _rapid_output(result):
+    """Normalize RapidOCR's object or tuple result to boxes, texts, scores."""
+    if result is None:
+        return None, None, None
+    boxes = getattr(result, "boxes", None)
+    txts = getattr(result, "txts", None)
+    scores = getattr(result, "scores", None)
+    if txts is not None:
+        return boxes, txts, scores
+    if isinstance(result, (list, tuple)):
+        if len(result) >= 3 and not isinstance(result[0], (int, float)):
+            return result[0], result[1], result[2]
+        if len(result) == 2 and hasattr(result[0], "txts"):
+            return _rapid_output(result[0])
+    return None, None, None
+
+
+def lines_from_rapid_result(result) -> list[OcrLine]:
+    boxes, txts, scores = _rapid_output(result)
+    if not txts:
+        return []
+    lines = []
+    for index, text in enumerate(txts):
+        value = str(text).strip()
+        if not value:
+            continue
+        if boxes is not None and index < len(boxes):
+            box = _rect_from_box(boxes[index])
+        else:
+            box = (0.0, float(index) * 20.0, 800.0, float(index) * 20.0 + 16.0)
+        score = None
+        if scores is not None and index < len(scores) and scores[index] is not None:
+            score = float(scores[index])
+        lines.append(OcrLine(value, box, score))
+    return lines
+
+
+def ocr_image_rapid_lines(image: Image.Image) -> list[OcrLine]:
     array = np.asarray(image.convert("RGB"))
     result = get_rapid_engine()(array)
-    txts = getattr(result, "txts", None) or ()
-    return "\n".join(txts)
+    return lines_from_rapid_result(result)
+
+
+def ocr_image_rapid(image: Image.Image) -> str:
+    lines = ocr_image_rapid_lines(image)
+    _OCR_LINES.lines = lines
+    return "\n".join(line.text for line in lines)
+
+
+def take_last_ocr_lines() -> list[OcrLine]:
+    lines = getattr(_OCR_LINES, "lines", None) or []
+    _OCR_LINES.lines = None
+    return list(lines)
 
 
 def ocr_image_paddle(image: Image.Image) -> str:
@@ -190,6 +263,32 @@ def render_page_band(page, scale=OCR_SCALE, fraction=HEADER_FRACTION):
     return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
 
+def lines_from_pymupdf(page) -> list[OcrLine]:
+    """Line boxes from an embedded text layer. Scanned pages return nothing."""
+    data = page.get_text("dict") or {}
+    lines = []
+    for block in data.get("blocks") or []:
+        for line in block.get("lines") or []:
+            text = "".join(span.get("text", "") for span in line.get("spans") or []).strip()
+            if not text:
+                continue
+            box = line.get("bbox") or (0, 0, 0, 0)
+            lines.append(OcrLine(text, (float(box[0]), float(box[1]), float(box[2]), float(box[3]))))
+    return lines
+
+
+def lines_from_plain_text(text: str) -> list[OcrLine]:
+    """Stack plain lines vertically when a PDF has text but no boxes."""
+    lines = []
+    for index, raw in enumerate((text or "").splitlines()):
+        value = raw.strip()
+        if not value:
+            continue
+        top = float(index) * 20.0
+        lines.append(OcrLine(value, (0.0, top, 800.0, top + 16.0)))
+    return lines
+
+
 def ocr_scanned_page(page, scale: float = OCR_SCALE) -> str:
     """OCR only the GST header band of the supplied page."""
     return ocr_image_rapid(render_page_band(page, scale=scale, fraction=HEADER_FRACTION))
@@ -199,56 +298,70 @@ def ocr_first_page(pdf_path: Path, scale: float = OCR_SCALE):
     """Read embedded text or OCR ONLY page 1 of a source PDF.
 
     Every source PDF is one complete invoice package. The remaining pages are
-    supporting documents and are never rendered/OCR'd.
+    supporting documents and are never rendered/OCR'd. The third value is the
+    page-1 lines with boxes, used to find the billed-to customer.
     """
     doc = fitz.open(pdf_path)
     if len(doc) == 0:
         doc.close()
-        return "", 0
+        return "", 0, []
 
     page = doc[0]
     embedded = page.get_text("text").strip()
     if len(embedded) >= 40:
         text = embedded
+        lines = lines_from_pymupdf(page) or lines_from_plain_text(text)
     else:
+        _OCR_LINES.lines = None
         text = ocr_scanned_page(page, scale=scale)
+        lines = take_last_ocr_lines() or lines_from_plain_text(text)
     page_count = len(doc)
     doc.close()
-    return text, page_count
+    return text, page_count, lines
 
 
 def ocr_pdf(pdf_path: Path, scale: float = OCR_SCALE):
     """Backward-compatible name: now reads ONLY the first page."""
-    text, _page_count = ocr_first_page(pdf_path, scale=scale)
+    text, _page_count, _lines = ocr_first_page(pdf_path, scale=scale)
     return [(0, text)]
 
 
-def retry_ocr_first_page(pdf_path: Path, first_page_text: str):
-    """Retry OCR at higher resolution, but still ONLY on page 1."""
+def retry_first_page_read(pdf_path: Path, first_page_text: str):
+    """Retry page 1 at a taller clip. Returns text plus OCR lines when scanned."""
     doc = fitz.open(pdf_path)
     if len(doc) == 0:
         doc.close()
-        return first_page_text
+        return first_page_text, []
 
     page = doc[0]
     embedded = page.get_text("text").strip()
     # If real embedded text exists, don't waste time OCR'ing it again.
     if len(embedded) >= 40:
+        lines = lines_from_pymupdf(page) or lines_from_plain_text(first_page_text)
         doc.close()
-        return first_page_text
+        return first_page_text, lines
 
     image = render_page_band(
         page,
         scale=OCR_RETRY_SCALE,
         fraction=HEADER_TALL_FRACTION,
     )
+    _OCR_LINES.lines = None
     retried = ocr_image_rapid(image)
+    lines = take_last_ocr_lines()
     if paddle_retry_enabled() and not extract_invoice_number(retried):
         paddle_text = ocr_image_paddle(image)
         if paddle_text:
             retried = paddle_text
+            lines = lines_from_plain_text(paddle_text)
     doc.close()
-    return retried
+    return retried, lines or lines_from_plain_text(retried)
+
+
+def retry_ocr_first_page(pdf_path: Path, first_page_text: str):
+    """Retry OCR at higher resolution, but still ONLY on page 1."""
+    text, _lines = retry_first_page_read(pdf_path, first_page_text)
+    return text
 
 
 def retry_ocr_without_invoice_starts(pdf_path: Path, page_texts):
@@ -450,18 +563,131 @@ def match_official_customer(text: str):
     return None
 
 
-def billed_to_region(text: str) -> str:
-    """Billed-to block from page 1, without the label itself."""
-    text = normalize_ocr_text(text)
-    billed = re.search(
-        r"(?:Details\s+Of\s+Recipient|Billed\s+to)(.*?)(?:Consignee|GSTIN|Place\s+of\s+Supply|Invoice\s*No|$)",
-        text,
-        flags=re.I | re.S,
-    )
-    if not billed:
+_COMPANY_RE = re.compile(
+    r"([A-Z0-9][A-Z0-9 .&'()/-]*?(?:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|LIMITED|LLP|LTD\.?))",
+    re.I,
+)
+_LETTERHEAD_RE = re.compile(
+    r"@|\b(?:EMAIL|PHONE|P\s*A\s*N|PAN|CIN|IRN|GAT\s*NO|VILLAGE)\b",
+    re.I,
+)
+
+
+def _anchor_text(value: str) -> str:
+    text = (value or "").upper().replace("0", "O").replace("1", "I")
+    text = re.sub(r"[^A-Z]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _anchor_rank(value: str) -> int:
+    """Higher is a better billed-to label. 0 means this line is not a label."""
+    norm = _anchor_text(value)
+    if not norm:
+        return 0
+    compact = norm.replace(" ", "")
+    if "DETAIL" in compact and "RECIPIENT" in compact:
+        return 3
+    if "BILLEDTO" in compact:
+        return 2
+    if "BILLTO" in compact:
+        return 1
+    for phrase, rank in (("DETAILS OF RECIPIENT", 3), ("BILLED TO", 2), ("BILL TO", 1)):
+        if len(norm) <= len(phrase) + 16 and SequenceMatcher(None, norm, phrase).ratio() >= 0.72:
+            return rank
+    return 0
+
+
+def _is_section_stop(value: str) -> bool:
+    norm = _anchor_text(value)
+    compact = norm.replace(" ", "")
+    if "CONSIGNEE" in compact:
+        return True
+    if "GSTIN" in compact and "UNIQUE" in compact:
+        return True
+    if "STATE" in compact and "CODE" in compact:
+        return True
+    return False
+
+
+def _company_name(value: str) -> str:
+    """Company line inside the billed-to section, or empty when it is not one."""
+    text = re.sub(r"(?i)details\s+of\s+recipient|billed\s+to|bill\s+to", " ", value or "")
+    text = re.sub(r"\s+", " ", text).strip(" ,:;-()")
+    if not text or _LETTERHEAD_RE.search(text) or re.match(r"^\d", text):
         return ""
-    region = re.sub(r"(?i)\bbilled\s+to\b", " ", billed.group(1))
-    return re.sub(r"\s+", " ", region).strip(" ,:-()")
+    if re.search(r"HIGHTEMP\s+FURNACES", text, re.I):
+        return ""
+    match = _COMPANY_RE.search(text)
+    if not match:
+        return ""
+    return match.group(1).strip(" ,:;-.")
+
+
+def _x_overlap(anchor: tuple[float, float, float, float], box: tuple[float, float, float, float]) -> float:
+    overlap = min(anchor[2], box[2]) - max(anchor[0], box[0])
+    if overlap <= 0:
+        return 0.0
+    width = max(1.0, anchor[2] - anchor[0])
+    return overlap / width
+
+
+def _same_row(anchor: tuple[float, float, float, float], box: tuple[float, float, float, float]) -> bool:
+    top = max(anchor[1], box[1])
+    bottom = min(anchor[3], box[3])
+    height = max(1.0, min(anchor[3] - anchor[1], box[3] - box[1]))
+    return bottom - top >= 0.4 * height
+
+
+def customer_from_lines(lines: list[OcrLine]) -> str:
+    """Company name in the billed-to column. Seller text above the label is ignored."""
+    ranked = [( _anchor_rank(line.text), index, line) for index, line in enumerate(lines)]
+    anchors = [item for item in ranked if item[0] > 0]
+    if not anchors:
+        return ""
+    _rank, _index, anchor = max(anchors, key=lambda item: (item[0], -item[2].box[1]))
+    on_label = _company_name(anchor.text)
+    if on_label:
+        return on_label
+
+    ax0, ay0, ax1, ay1 = anchor.box
+    stops = []
+    for line in lines:
+        if line is anchor or not _is_section_stop(line.text):
+            continue
+        if line.box[1] <= ay1:
+            continue
+        if _x_overlap(anchor.box, line.box) < 0.25 and not (line.box[0] >= ax0 - 8 and line.box[0] <= ax1 + 8):
+            continue
+        stops.append(line.box[1])
+    stop_y = min(stops) if stops else float("inf")
+
+    candidates = []
+    for line in lines:
+        if line is anchor:
+            continue
+        x0, y0, x1, y1 = line.box
+        if y0 >= stop_y:
+            continue
+        in_column = _x_overlap(anchor.box, line.box) >= 0.25 or (ax0 - 8 <= x0 <= ax1)
+        below = y0 >= ay0 - 2 and in_column
+        # Name printed on the label's row, still in the billed-to column.
+        beside = _same_row(anchor.box, line.box) and ax0 <= x0 <= ax1 + max(40.0, ax1 - ax0)
+        if not below and not beside:
+            continue
+        name = _company_name(line.text)
+        if name:
+            candidates.append((y0, x0, name))
+    if not candidates:
+        return ""
+    candidates.sort()
+    return candidates[0][2]
+
+
+def billed_to_region(text: str, lines: list[OcrLine] | None = None) -> str:
+    """Customer company line from the billed-to section, not the seller letterhead."""
+    if lines is None:
+        lines = lines_from_plain_text(text)
+    return customer_from_lines(lines)
 
 
 def extract_customer_name(text: str):
