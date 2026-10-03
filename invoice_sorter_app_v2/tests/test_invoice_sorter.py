@@ -333,6 +333,66 @@ def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
     }
 
 
+def test_two_inner_units_under_same_day(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf",
+        invoices=[SAMPLE_INVOICES[0]],
+    )
+    write_text_pdf(
+        input_root / "25-Jun-26" / "Invoice" / "2_2023" / "b.pdf",
+        invoices=[SAMPLE_INVOICES[1]],
+    )
+    results = process(input_root, output_root)
+    copied = [r for r in results if r["status"] == "COPIED"]
+    assert {(r["invoice_number"], r["date_folder"]) for r in copied} == {
+        ("20242500788", "25-Jun-26"),
+        ("20242500752", "25-Jun-26"),
+    }
+    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
+    assert (customer_day / "20242500788.pdf").exists()
+    assert (customer_day / "20242500752.pdf").exists()
+
+
+def test_zip_reextract_when_archive_updated(tmp_path):
+    import os
+    import time
+    import zipfile
+
+    bundle = tmp_path / "bundle"
+    day = bundle / "25-Jun-26" / "Invoice"
+    write_text_pdf(day / "2_2023" / "b.pdf", invoices=[SAMPLE_INVOICES[1]])
+    zip_path = tmp_path / "25-Jun-26.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+
+    output_root = tmp_path / "Output"
+    first = process(zip_path, output_root)
+    assert len([r for r in first if r["status"] == "COPIED"]) == 1
+    extract = tmp_path / "25-Jun-26_extracted"
+    assert (extract / ".invoice_sorter_zip_source").is_file()
+    assert not (extract / "25-Jun-26" / "Invoice" / "1_2024").exists()
+
+    write_text_pdf(day / "1_2024" / "a.pdf", invoices=[SAMPLE_INVOICES[0]])
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in bundle.rglob("*.pdf"):
+            zf.write(file, file.relative_to(bundle))
+    time.sleep(0.05)
+    os.utime(zip_path, (time.time(), time.time()))
+
+    from core.sorter import resolve_input
+
+    resolve_input(zip_path)
+    assert (extract / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf").is_file()
+
+    process(zip_path, output_root)
+    customer_day = output_root / "Porite India Pvt. Ltd" / "2026" / "25-Jun-26"
+    assert (customer_day / "20242500788.pdf").exists()
+    assert (customer_day / "20242500752.pdf").exists()
+
+
 def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
     import zipfile
 

@@ -850,14 +850,49 @@ def extract_zip(archive: Path, dest: Path) -> Path:
     return dest
 
 
+_ZIP_SOURCE_MARKER = ".invoice_sorter_zip_source"
+
+
+def _write_zip_source_marker(dest: Path, archive: Path) -> None:
+    stat = archive.stat()
+    (dest / _ZIP_SOURCE_MARKER).write_text(
+        f"{stat.st_mtime}\n{stat.st_size}\n",
+        encoding="utf-8",
+    )
+
+
+def _zip_extract_stale(archive: Path, dest: Path) -> bool:
+    """True when the zip must be extracted again (missing tree or archive changed)."""
+    if not dest.exists() or not find_date_folders(dest):
+        return True
+    try:
+        zip_stat = archive.stat()
+    except OSError:
+        return True
+    marker = dest / _ZIP_SOURCE_MARKER
+    if marker.is_file():
+        try:
+            mtime_s, size_s = marker.read_text(encoding="utf-8").splitlines()[:2]
+            if float(mtime_s) == zip_stat.st_mtime and int(size_s) == zip_stat.st_size:
+                return False
+        except (ValueError, OSError):
+            pass
+        return True
+    try:
+        return zip_stat.st_mtime > dest.stat().st_mtime
+    except OSError:
+        return True
+
+
 def resolve_input(path: Path) -> Path:
     path = path.expanduser()
     if path.is_file() and path.suffix.lower() == ".zip":
         dest = path.parent / f"{path.stem}_extracted"
-        if not find_date_folders(dest):
+        if _zip_extract_stale(path, dest):
             if dest.exists():
                 shutil.rmtree(dest)
             extract_zip(path, dest)
+            _write_zip_source_marker(dest, path)
         return dest
     if path.is_dir():
         return path

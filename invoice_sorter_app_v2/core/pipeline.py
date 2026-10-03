@@ -331,7 +331,7 @@ def finalize_date_folder(store: Store, date_folder: Path):
             try:
                 _rename_done(unit["unit"])
             except OSError:
-                return
+                continue
     if not date_folder.exists():
         return
     invoice_dir = invoice_child(date_folder)

@@ -45,6 +45,11 @@ You can point the app at:
 - the extracted `June 26` folder, or
 - the zip (`June 26-20260831T053601Z-001.zip`)
 
+If a zip was sorted before and you add folders (for example `1_2024`) to a new
+download, delete the `{zipname}_extracted` folder beside the zip or use an
+updated zip file—the app re-extracts when the archive changes. For daily work,
+point Input at the extracted `DD-MMM-YY` day folder instead of the zip.
+
 Nested date folders are found automatically. PIS folders are left untouched.
 
 ## Windows desktop (recommended)
