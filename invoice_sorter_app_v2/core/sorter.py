@@ -28,9 +28,17 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 
 def app_root() -> Path:
-    """Folder that contains customers.txt (source tree or frozen EXE dir)."""
+    """Folder that contains the customer mapping (source tree or frozen EXE)."""
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        exe_dir = Path(sys.executable).resolve().parent
+        meipass = getattr(sys, "_MEIPASS", None)
+        candidates = [exe_dir]
+        if meipass:
+            candidates.append(Path(meipass))
+        for folder in candidates:
+            if (folder / "customer_master_alias_mapping.xlsx").is_file() or (folder / "customers.txt").is_file():
+                return folder
+        return exe_dir
     return Path(__file__).resolve().parents[1]
 
 
