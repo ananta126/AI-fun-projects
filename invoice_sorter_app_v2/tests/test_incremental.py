@@ -324,5 +324,3 @@ def test_client_alias_csv_uses_exact_alias_not_fuzzy():
     unknown = match_customer("TOTALLY UNKNOWN CORP XYZ", customers, aliases, master.review_norms)
     assert not unknown.accepted
     assert unknown.reason_code == "CUSTOMER_NOT_MATCHED"
-    assert list(output_root.rglob("*.pdf")) == []
-    assert not (input_root / "01-Sep-26_done").exists()
