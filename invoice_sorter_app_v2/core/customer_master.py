@@ -16,6 +16,7 @@ from core.sorter import app_root
 
 
 MASTER_FILENAME = "customer_master_alias_mapping.xlsx"
+ALIAS_MASTER_CSV_FILENAME = "customer_alias_mapping_updated.csv"
 
 
 @dataclass(frozen=True)
@@ -42,12 +43,55 @@ def master_path() -> Path:
     return app_root() / MASTER_FILENAME
 
 
+def alias_master_csv_path() -> Path:
+    return app_root() / ALIAS_MASTER_CSV_FILENAME
+
+
 def _clean(value) -> str:
     return " ".join(str(value or "").replace("\xa0", " ").split()).strip()
 
 
+def _aliases_from_csv(path: Path) -> tuple[MasterAlias, ...]:
+    import csv
+
+    aliases: list[MasterAlias] = []
+    seen_alias: set[str] = set()
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            alias = _clean(row.get("Alias"))
+            customer_id = _clean(row.get("Customer ID"))
+            official_name = _clean(row.get("Official Customer"))
+            norm = normalize_customer(alias)
+            if not norm or not customer_id or norm in seen_alias:
+                continue
+            seen_alias.add(norm)
+            aliases.append(MasterAlias(customer_id, official_name, alias))
+    return tuple(aliases)
+
+
+def _alias_rows_from_csv(path: Path) -> list[dict]:
+    import csv
+
+    rows = []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            alias = _clean(row.get("Alias"))
+            if not alias:
+                continue
+            rows.append({
+                "customer_id": _clean(row.get("Customer ID")),
+                "official_name": _clean(row.get("Official Customer")),
+                "alias": alias,
+                "match_score": row.get("Match Score", ""),
+            })
+    return rows
+
+
 def alias_sheet_rows(path: Path | None = None) -> list[dict]:
-    """Every Alias Master row, in sheet order, including repeated spellings."""
+    """Every approved alias row, in file order, including repeated spellings."""
+    csv_path = alias_master_csv_path()
+    if csv_path.is_file():
+        return _alias_rows_from_csv(csv_path)
     path = Path(path) if path else master_path()
     if not path.is_file():
         return []
@@ -92,19 +136,23 @@ def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
             seen_names.add(name)
             customers.append(MasterCustomer(customer_id, name))
 
-        aliases = []
-        seen_alias = set()
-        for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
-            if not row or not row[2]:
-                continue
-            alias = _clean(row[2])
-            norm = normalize_customer(alias)
-            customer_id = _clean(row[0])
-            official_name = _clean(row[1])
-            if not norm or not customer_id or norm in seen_alias:
-                continue
-            seen_alias.add(norm)
-            aliases.append(MasterAlias(customer_id, official_name, alias))
+        csv_path = alias_master_csv_path()
+        if csv_path.is_file():
+            aliases = list(_aliases_from_csv(csv_path))
+        else:
+            aliases = []
+            seen_alias = set()
+            for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
+                if not row or not row[2]:
+                    continue
+                alias = _clean(row[2])
+                norm = normalize_customer(alias)
+                customer_id = _clean(row[0])
+                official_name = _clean(row[1])
+                if not norm or not customer_id or norm in seen_alias:
+                    continue
+                seen_alias.add(norm)
+                aliases.append(MasterAlias(customer_id, official_name, alias))
 
         blocked = set()
         if "Review Required" in workbook.sheetnames:

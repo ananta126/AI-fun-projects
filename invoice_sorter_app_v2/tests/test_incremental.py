@@ -272,7 +272,9 @@ def test_workbook_alias_files_under_official_id(tmp_path):
     assert (output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026" / "20262500701.pdf").is_file()
     mapping = (output_root / "customer_alias_mapping.csv").read_text(encoding="utf-8-sig")
     assert "ACE INOTEC MANUFACTURING PVT. LTD" in mapping
-    assert mapping.count("\n") == 116  # header plus every Alias Master row
+    from core.customer_master import alias_sheet_rows
+
+    assert mapping.count("\n") == len(alias_sheet_rows()) + 1
     store = Store(output_root / "invoice_processor.db")
     porite = store.customer_by_name("Porite India Pvt. Ltd.")
     assert porite["customer_id"] == "C071"
@@ -295,5 +297,32 @@ def test_review_list_spellings_are_not_filed(tmp_path):
     results = process(input_root, output_root)
     assert {row["status"] for row in results} == {"REVIEW"}
     assert {row["reason_code"] for row in results} == {"CUSTOMER_NOT_MATCHED"}
+
+
+def test_client_alias_csv_uses_exact_alias_not_fuzzy():
+    from core.customer_master import load_customer_master
+
+    master = load_customer_master()
+    assert master is not None
+    customers = [
+        CustomerRef(item.customer_id, item.official_name, normalize_customer(item.official_name))
+        for item in master.customers
+    ]
+    aliases = [
+        AliasRef(normalize_customer(item.alias), item.customer_id, item.alias)
+        for item in master.aliases
+    ]
+    approved = match_customer(
+        "ADVIK HII-TECH PVT.LTD",
+        customers,
+        aliases,
+        master.review_norms,
+    )
+    assert approved.accepted
+    assert approved.method == "EXACT_ALIAS"
+    assert approved.customer_id == "C005"
+    unknown = match_customer("TOTALLY UNKNOWN CORP XYZ", customers, aliases, master.review_norms)
+    assert not unknown.accepted
+    assert unknown.reason_code == "CUSTOMER_NOT_MATCHED"
     assert list(output_root.rglob("*.pdf")) == []
     assert not (input_root / "01-Sep-26_done").exists()
