@@ -19,11 +19,11 @@ from core.review_csv import (
 )
 from core.sorter import (
     billed_to_region,
-    extract_invoice_number,
     find_date_folders,
     invoice_child,
     load_official_customers,
     ocr_first_page,
+    resolve_invoice_number,
     retry_first_page_read,
     safe_name,
     worker_count,
@@ -33,7 +33,19 @@ from core.sorter import (
 )
 
 
-_PAGE1 = "Could not confidently extract invoice number/customer from page 1"
+def _detail_invoice_missing() -> str:
+    return "No GST invoice number on page 1 after regex and spatial OCR"
+
+
+def _detail_customer_missing() -> str:
+    return "No billed-to company name on page 1"
+
+
+def _detail_customer_not_matched(raw: str, match) -> str:
+    if match.method and match.method != "NONE":
+        score = f"{match.score:.2f}" if match.score is not None else ""
+        return f"Billed-to '{raw}' did not match an approved customer (method={match.method}, score={score})"
+    return f"Billed-to '{raw}' is not on the customer or alias list"
 
 
 def _master(store: Store):
@@ -126,14 +138,23 @@ def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
         base["source_rel"] = pdf.name
     try:
         text, page_count, lines = ocr_first_page(pdf)
-        invoice_no = extract_invoice_number(text)
+        invoice_no = resolve_invoice_number(text, lines, source="page1", pdf_path=pdf)
         raw = billed_to_region(text, lines)
         if not invoice_no or not raw:
             retried, retried_lines = retry_first_page_read(pdf, text)
             if retried != text:
                 text = retried
-                invoice_no = extract_invoice_number(text) or invoice_no
-                raw = billed_to_region(text, retried_lines) or raw
+            if retried_lines:
+                lines = retried_lines
+            if not invoice_no:
+                invoice_no = resolve_invoice_number(
+                    text,
+                    lines,
+                    source="retry_first_page",
+                    pdf_path=pdf,
+                )
+            if not raw:
+                raw = billed_to_region(text, lines) or raw
     except Exception as exc:  # noqa: BLE001 — one bad PDF must not stop the batch
         base.update({
             "state": "FAILED",
@@ -175,14 +196,14 @@ def _classify(base: dict, customers, aliases, blocked=None) -> dict:
         base.update({
             "state": "REVIEW_REQUIRED",
             "reason_code": "INVOICE_NUMBER_NOT_DETECTED",
-            "reason_detail": _PAGE1,
+            "reason_detail": _detail_invoice_missing(),
         })
         return base
     if not raw:
         base.update({
             "state": "REVIEW_REQUIRED",
             "reason_code": "CUSTOMER_NOT_DETECTED",
-            "reason_detail": _PAGE1,
+            "reason_detail": _detail_customer_missing(),
         })
         return base
     match = match_customer(raw, customers, aliases, blocked)
@@ -205,7 +226,7 @@ def _classify(base: dict, customers, aliases, blocked=None) -> dict:
         "customer_id": match.customer_id or "",
         "official_name": match.official_name or "",
         "reason_code": match.reason_code or "CUSTOMER_NOT_MATCHED",
-        "reason_detail": _PAGE1,
+        "reason_detail": _detail_customer_not_matched(raw, match),
     })
     return base
 
@@ -366,8 +387,16 @@ def _write_reports(store: Store, output_root: Path, extra_results: list[dict]):
     return results
 
 
+def _persist_payload(store: Store, payload: dict, batch_id: int, output_root: Path, execute: bool) -> dict:
+    payload["batch_id"] = batch_id
+    row = store.upsert_analysis(payload)
+    if execute and row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
+        row = execute_document(store, row, output_root)
+    return result_from_row(row)
+
+
 def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root: Path, progress, execute: bool, blocked=None):
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     total = len(jobs)
 
@@ -376,32 +405,27 @@ def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root
         analyzed = _analyze_pdf(pdf, root, date_folder, unit)
         return _classify(analyzed, customers, aliases, blocked)
 
-    # jobs are (date_folder, unit, pdf, root)
-    payloads = []
+    produced = []
     workers = 1 if total <= 1 else min(worker_count(), total)
     if workers == 1:
         for index, job in enumerate(jobs, start=1):
             if progress:
                 progress(index - 1, total, job[2].name)
-            payloads.append(_payload(job))
+            produced.append(_persist_payload(store, _payload(job), batch_id, output_root, execute))
             if progress:
                 progress(index, total, job[2].name)
     else:
         if progress:
             progress(0, total, jobs[0][2].name)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for index, payload in enumerate(pool.map(_payload, jobs), start=1):
-                payloads.append(payload)
+            futures = {pool.submit(_payload, job): job for job in jobs}
+            completed = 0
+            for future in as_completed(futures):
+                job = futures[future]
+                produced.append(_persist_payload(store, future.result(), batch_id, output_root, execute))
+                completed += 1
                 if progress:
-                    progress(index, total, "")
-
-    produced = []
-    for payload in payloads:
-        payload["batch_id"] = batch_id
-        row = store.upsert_analysis(payload)
-        if execute and row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
-            row = execute_document(store, row, output_root)
-        produced.append(result_from_row(row))
+                    progress(completed, total, job[2].name)
     return produced
 
 

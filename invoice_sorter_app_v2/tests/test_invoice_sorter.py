@@ -18,12 +18,14 @@ from core.sorter import (  # noqa: E402
     extract_customer_name,
     extract_invoice_date,
     extract_invoice_number,
+    extract_invoice_number_from_lines,
     looks_like_invoice_page,
     ocr_pdf,
     parse_date_folder,
     process,
     process_invoice_file,
     process_uploaded_zip,
+    resolve_invoice_number,
     retry_ocr_without_invoice_starts,
     zip_output_tree,
 )
@@ -501,6 +503,42 @@ def _hightemp_page_lines(*, billed_y: float = 120) -> list[OcrLine]:
         _line("OTHER CONSIGNEE PVT LTD", 460, billed_y + 22, 720, billed_y + 38),
         _line("GSTIN/Unique ID : 27AAACR8959A1Z9", 40, billed_y + 64, 360, billed_y + 80),
     ]
+
+
+def _invoice_label_below_lines(invoice_no: str, *, label: str = "Invoice No.") -> list[OcrLine]:
+    """01_2022-style layout: label and number on separate OCR lines."""
+    return [
+        _line("TAX INVOICE", 40, 10, 200, 26),
+        _line(label, 400, 28, 520, 44),
+        _line(invoice_no, 400, 48, 520, 64),
+        _line("Details Of Recipient (Billed to)", 40, 120, 280, 136),
+        _line("PORITE INDIA PVT.LTD.", 40, 142, 360, 158),
+    ]
+
+
+def test_spatial_invoice_number_below_label_212201807():
+    lines = _invoice_label_below_lines("212201807")
+    assert extract_invoice_number("Invoice No.") is None
+    assert extract_invoice_number_from_lines(lines) == "212201807"
+    assert resolve_invoice_number("Invoice No.", lines) == "212201807"
+
+
+def test_spatial_invoice_number_below_label_212201802():
+    lines = _invoice_label_below_lines("212201802", label="Invoice Number")
+    assert extract_invoice_number_from_lines(lines) == "212201802"
+
+
+def test_spatial_invoice_label_variants():
+    for label in ("InvoiceNo.", "lnvoice No.", "Inv No :"):
+        lines = _invoice_label_below_lines("212201807", label=label)
+        assert extract_invoice_number_from_lines(lines) == "212201807"
+
+
+def test_spatial_invoice_on_same_row_as_label():
+    lines = [
+        _line("Invoice No. 212201807", 400, 28, 620, 44),
+    ]
+    assert extract_invoice_number_from_lines(lines) == "212201807"
 
 
 def test_3874_layout_uses_billed_to_not_letterhead():

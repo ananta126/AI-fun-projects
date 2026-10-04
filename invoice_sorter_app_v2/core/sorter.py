@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import re
 import shutil
@@ -49,8 +50,36 @@ def worker_count():
     # Pytest stays single-threaded so OCR tests stay stable.
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return 1
+    override = os.environ.get("INVOICE_SORTER_WORKERS", "").strip()
+    if override.isdigit():
+        return max(1, int(override))
     cpu = os.cpu_count() or 2
     return max(1, min(2, cpu))
+
+
+def _ort_intra_threads() -> int:
+    value = os.environ.get("INVOICE_SORTER_ORT_INTRA_THREADS", "").strip()
+    return max(1, int(value)) if value.isdigit() else 2
+
+
+def _ort_inter_threads() -> int:
+    value = os.environ.get("INVOICE_SORTER_ORT_INTER_THREADS", "").strip()
+    return max(1, int(value)) if value.isdigit() else 1
+
+
+def debug_ocr_enabled() -> bool:
+    return os.environ.get("INVOICE_SORTER_DEBUG_OCR", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _debug_ocr(message: str, **fields):
+    if not debug_ocr_enabled():
+        return
+    parts = [message]
+    for key, value in fields.items():
+        if value is None or value == "":
+            continue
+        parts.append(f"{key}={value}")
+    logging.getLogger("invoice_sorter.ocr").info(" | ".join(parts))
 
 
 def paddle_retry_enabled():
@@ -69,8 +98,8 @@ def get_rapid_engine():
                 "Global.max_side_len": 960,
                 "Global.log_level": "error",
                 "EngineConfig.onnxruntime.use_cuda": False,
-                "EngineConfig.onnxruntime.intra_op_num_threads": 2,
-                "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                "EngineConfig.onnxruntime.intra_op_num_threads": _ort_intra_threads(),
+                "EngineConfig.onnxruntime.inter_op_num_threads": _ort_inter_threads(),
             }
         )
         _RAPID_LOCAL.engine = engine
@@ -349,7 +378,7 @@ def retry_first_page_read(pdf_path: Path, first_page_text: str):
     _OCR_LINES.lines = None
     retried = ocr_image_rapid(image)
     lines = take_last_ocr_lines()
-    if paddle_retry_enabled() and not extract_invoice_number(retried):
+    if paddle_retry_enabled() and not resolve_invoice_number(retried, lines):
         paddle_text = ocr_image_paddle(image)
         if paddle_text:
             retried = paddle_text
@@ -427,6 +456,148 @@ def extract_invoice_number(text: str):
             invoice_no = invoice_no.strip(" .,:;")
             if _plausible_gst_invoice_number(invoice_no):
                 return invoice_no
+    return None
+
+
+_INVOICE_LABEL_PREFIX = re.compile(
+    r"(?i)^(?:Invoice\s*No\.?|Invoice\s*(?:Number|#)|Inv\.?\s*No\.?)\s*(?:&\s*Date)?\s*[:\-&]*\s*",
+)
+
+
+def _invoice_anchor_text(value: str) -> str:
+    text = normalize_ocr_text(value or "").upper()
+    text = re.sub(r"[^A-Z0-9#]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _invoice_label_rank(value: str) -> int:
+    norm = _invoice_anchor_text(value)
+    if not norm:
+        return 0
+    compact = norm.replace(" ", "")
+    if "INVOICENO" in compact or "INVOICENUMBER" in compact or "INVOICE#" in compact:
+        return 3
+    if "INVNO" in compact or norm.startswith("INV NO"):
+        return 2
+    if norm.startswith("INVOICE"):
+        return 1
+    return 0
+
+
+def _invoice_candidates_in_text(text: str) -> list[str]:
+    text = normalize_ocr_text(text or "")
+    stripped = _INVOICE_LABEL_PREFIX.sub("", text).strip()
+    bodies = [stripped] if stripped != text.strip() else []
+    bodies.append(text)
+    found: list[str] = []
+    for body in bodies:
+        for match in re.finditer(r"\b([0-9A-Z][0-9A-Z./_-]{5,})\b", body):
+            token = match.group(1).strip(" .,:;")
+            token = re.split(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}", token, maxsplit=1)[0]
+            token = token.strip(" .,:;")
+            if _plausible_gst_invoice_number(token):
+                found.append(token)
+        for match in re.finditer(r"\b(\d{8,14})\b", body):
+            token = match.group(1)
+            if _plausible_gst_invoice_number(token):
+                found.append(token)
+    # Preserve order, drop duplicates.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in found:
+        if item not in seen:
+            seen.add(item)
+            ordered.append(item)
+    return ordered
+
+
+def extract_invoice_number_from_lines(lines: list[OcrLine]) -> str | None:
+    """Spatial pass: invoice label boxes, then number on same row / below / on label line."""
+    if not lines:
+        return None
+    ranked = [(_invoice_label_rank(line.text), index, line) for index, line in enumerate(lines)]
+    anchors = [item for item in ranked if item[0] > 0]
+    if not anchors:
+        return None
+    _rank, _index, anchor = max(anchors, key=lambda item: (item[0], -item[2].box[1]))
+    ax0, ay0, ax1, ay1 = anchor.box
+    reject_reasons: list[str] = []
+    candidates: list[tuple[int, float, float, str, str]] = []
+
+    for token in _invoice_candidates_in_text(anchor.text):
+        candidates.append((0, ay0, ax0, token, "on_label"))
+
+    for line in lines:
+        if line is anchor:
+            continue
+        x0, y0, x1, y1 = line.box
+        for token in _invoice_candidates_in_text(line.text):
+            same_row = _same_row(anchor.box, line.box) and x0 >= ax0 - 4
+            below = y0 >= ay1 - 2 and _x_overlap(anchor.box, line.box) >= 0.2
+            right = same_row and x0 >= ax1 - 12
+            if same_row and right:
+                relation = "right"
+                priority = 1
+            elif below:
+                relation = "below"
+                priority = 2
+            elif same_row:
+                relation = "same_row"
+                priority = 3
+            else:
+                reject_reasons.append(f"spatial_reject:{token}:no_relation")
+                continue
+            score = line.score if line.score is not None else 0.0
+            candidates.append((priority, y0, -score, token, relation))
+
+    if not candidates:
+        _debug_ocr(
+            "invoice_spatial_miss",
+            labels=[line.text for _, _, line in anchors[:3]],
+            reject=";".join(reject_reasons[:8]),
+        )
+        return None
+
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    chosen = candidates[0][3]
+    _debug_ocr(
+        "invoice_spatial_hit",
+        value=chosen,
+        relation=candidates[0][4],
+        label=anchor.text,
+    )
+    return chosen
+
+
+def resolve_invoice_number(
+    text: str,
+    lines: list[OcrLine] | None = None,
+    *,
+    source: str = "page1",
+    pdf_path: Path | None = None,
+) -> str | None:
+    """Pass 1 regex, then pass 2 spatial. Debug logs when both fail."""
+    lines = lines or []
+    invoice_no = extract_invoice_number(text)
+    if invoice_no:
+        return invoice_no
+    spatial = extract_invoice_number_from_lines(lines)
+    if spatial:
+        return spatial
+    if debug_ocr_enabled():
+        label_lines = [line.text for line in lines if _invoice_label_rank(line.text) > 0]
+        sample = normalize_ocr_text(text or "")[:400].replace("\n", " ")
+        _debug_ocr(
+            "invoice_extract_failed",
+            source=source,
+            pdf=pdf_path.name if pdf_path else "",
+            text_sample=sample,
+            label_lines=" | ".join(label_lines[:5]),
+            line_boxes=len(lines),
+            regex_candidates=_invoice_candidates_in_text(text),
+            spatial_attempted=bool(label_lines),
+            retry_hint="will_retry" if pdf_path else "no_pdf",
+        )
     return None
 
 
