@@ -137,6 +137,83 @@ def _alias_rows_from_csv(
     return rows
 
 
+def _xlsx_alias_sheet_is_final(workbook) -> bool:
+    if "Alias Master" not in workbook.sheetnames:
+        return False
+    header = next(
+        workbook["Alias Master"].iter_rows(min_row=1, max_row=1, values_only=True),
+        None,
+    )
+    if not header:
+        return False
+    cols = {_clean(c) for c in header if c is not None and str(c).strip()}
+    return "Alias" in cols and "Customer ID" in cols and "Official Customer" not in cols
+
+
+def _master_alias_from_xlsx_row(
+    row: tuple,
+    official_by_id: dict[str, str],
+    final_schema: bool,
+) -> MasterAlias | None:
+    if not row:
+        return None
+    if final_schema:
+        if len(row) < 2:
+            return None
+        alias = _clean(row[0])
+        customer_id = _clean(row[1])
+        official_name = _official_name_for_alias_row(customer_id, "", official_by_id, True)
+    else:
+        if len(row) < 3 or not row[2]:
+            return None
+        customer_id = _clean(row[0])
+        official_name = _clean(row[1])
+        alias = _clean(row[2])
+        if not official_name:
+            official_name = _official_name_for_alias_row(customer_id, "", official_by_id, False)
+    norm = normalize_customer(alias)
+    if not norm or not customer_id or not official_name:
+        return None
+    return MasterAlias(customer_id, official_name, alias)
+
+
+def _alias_dict_from_xlsx_row(
+    row: tuple,
+    official_by_id: dict[str, str],
+    final_schema: bool,
+) -> dict | None:
+    item = _master_alias_from_xlsx_row(row, official_by_id, final_schema)
+    if item is None:
+        return None
+    score = ""
+    if not final_schema and len(row) > 3 and row[3] is not None:
+        score = row[3]
+    return {
+        "customer_id": item.customer_id,
+        "official_name": item.official_name,
+        "alias": item.alias,
+        "match_score": score,
+    }
+
+
+def _aliases_from_xlsx_sheet(workbook, official_by_id: dict[str, str]) -> list[MasterAlias]:
+    if "Alias Master" not in workbook.sheetnames:
+        return []
+    final_schema = _xlsx_alias_sheet_is_final(workbook)
+    aliases: list[MasterAlias] = []
+    seen_alias: set[str] = set()
+    for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
+        item = _master_alias_from_xlsx_row(row, official_by_id, final_schema)
+        if item is None:
+            continue
+        norm = normalize_customer(item.alias)
+        if norm in seen_alias:
+            continue
+        seen_alias.add(norm)
+        aliases.append(item)
+    return aliases
+
+
 def alias_sheet_rows(path: Path | None = None, official_by_id: dict[str, str] | None = None) -> list[dict]:
     """Every approved alias row, in file order, including repeated spellings."""
     csv_path = alias_master_csv_path()
@@ -153,17 +230,18 @@ def alias_sheet_rows(path: Path | None = None, official_by_id: dict[str, str] | 
 
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
+        final_schema = _xlsx_alias_sheet_is_final(workbook)
+        official_by_id = official_by_id or {}
+        if not official_by_id:
+            for row in workbook["Customer Master"].iter_rows(min_row=2, values_only=True):
+                if not row or len(row) < 2 or not row[0] or not row[1]:
+                    continue
+                official_by_id[_clean(row[0])] = _clean(row[1])
         rows = []
         for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
-            if not row or not row[2]:
-                continue
-            score = row[3] if len(row) > 3 and row[3] is not None else ""
-            rows.append({
-                "customer_id": _clean(row[0]),
-                "official_name": _clean(row[1]),
-                "alias": _clean(row[2]),
-                "match_score": score,
-            })
+            parsed = _alias_dict_from_xlsx_row(row, official_by_id, final_schema)
+            if parsed:
+                rows.append(parsed)
         return rows
     finally:
         workbook.close()
@@ -181,7 +259,7 @@ def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
         customers = []
         seen_names = set()
         for row in workbook["Customer Master"].iter_rows(min_row=2, values_only=True):
-            if not row or not row[0] or not row[1]:
+            if not row or len(row) < 2 or not row[0] or not row[1]:
                 continue
             name = _clean(row[1])
             customer_id = _clean(row[0])
@@ -195,24 +273,12 @@ def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
         if csv_path.is_file():
             aliases = list(_aliases_from_csv(csv_path, official_by_id))
         else:
-            aliases = []
-            seen_alias = set()
-            for row in workbook["Alias Master"].iter_rows(min_row=2, values_only=True):
-                if not row or not row[2]:
-                    continue
-                alias = _clean(row[2])
-                norm = normalize_customer(alias)
-                customer_id = _clean(row[0])
-                official_name = _clean(row[1])
-                if not norm or not customer_id or norm in seen_alias:
-                    continue
-                seen_alias.add(norm)
-                aliases.append(MasterAlias(customer_id, official_name, alias))
+            aliases = _aliases_from_xlsx_sheet(workbook, official_by_id)
 
         blocked = set()
         if "Review Required" in workbook.sheetnames:
             for row in workbook["Review Required"].iter_rows(min_row=2, values_only=True):
-                if not row or not row[1]:
+                if not row or len(row) < 2 or not row[1]:
                     continue
                 norm = normalize_customer(_clean(row[1]))
                 if norm:
