@@ -520,15 +520,8 @@ def test_two_column_alias_xlsx_without_csv(tmp_path, monkeypatch):
     assert all(item.official_name for item in master.aliases)
 
 
-def test_c132_is_not_an_official_customer_id():
-    master = load_customer_master()
-    assert master is not None
-    ids = {c.customer_id for c in master.customers}
-    assert "C132" not in ids
-
-
-def test_nexteer_ocr_alias_maps_to_htf_acd_nexteer_c044():
-    """Regression: Nexteer legal-name OCR must file under C044 / HTF ACD Nexteer."""
+def test_nexteer_automotive_india_maps_to_c132_not_htf_acd():
+    """Client-reviewed: legal-name Nexteer India is C132, separate from C044 HTF ACD Nexteer."""
     master = load_customer_master()
     assert master is not None
     customers = [
@@ -542,13 +535,39 @@ def test_nexteer_ocr_alias_maps_to_htf_acd_nexteer_c044():
     raw = "Nexteer Automotive India Pvt. Ltd"
     match = match_customer(raw, customers, aliases, master.review_norms)
     assert match.accepted
-    assert match.customer_id == "C044"
-    assert match.official_name == "HTF ACD Nexteer"
+    assert match.customer_id == "C132"
+    assert match.official_name == "Nexteer Automotive India Pvt. Ltd"
+    assert match.method in {"EXACT_ALIAS", "EXACT_OFFICIAL"}
+    htf = match_customer("HTF ACD Nexteer", customers, aliases, master.review_norms)
+    assert htf.accepted
+    assert htf.customer_id == "C044"
+    assert htf.official_name == "HTF ACD Nexteer"
+    assert htf.method == "EXACT_OFFICIAL"
+
+
+def test_nexteer_typo_alias_maps_to_c132():
+    master = load_customer_master()
+    assert master is not None
+    customers = [
+        CustomerRef(item.customer_id, item.official_name, normalize_customer(item.official_name))
+        for item in master.customers
+    ]
+    aliases = [
+        AliasRef(normalize_customer(item.alias), item.customer_id, item.alias)
+        for item in master.aliases
+    ]
+    match = match_customer(
+        "Nexteer Automotive Inaia Pvt. Ltd",
+        customers,
+        aliases,
+        master.review_norms,
+    )
+    assert match.accepted
+    assert match.customer_id == "C132"
     assert match.method == "EXACT_ALIAS"
 
 
-def test_nexteer_sort_completes_under_htf_acd_nexteer_folder(tmp_path):
-    """Sort flow: Nexteer OCR → C044, EXACT_ALIAS, COMPLETED (COPIED)."""
+def test_nexteer_sort_completes_under_nexteer_india_folder(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     _invoice_in_unit(
@@ -564,11 +583,11 @@ def test_nexteer_sort_completes_under_htf_acd_nexteer_folder(tmp_path):
     row = results[0]
     assert row["status"] == "COPIED"
     assert row["state"] == "COMPLETED"
-    assert row["customer_id"] == "C044"
-    assert row["customer"] == "HTF ACD Nexteer"
-    assert row["match_method"] == "EXACT_ALIAS"
-    assert (output_root / "HTF ACD Nexteer" / "2022" / "20222500177.pdf").exists()
-    assert not (output_root / "Nexteer Automotive India Pvt. Ltd").exists()
+    assert row["customer_id"] == "C132"
+    assert row["customer"] == "Nexteer Automotive India Pvt. Ltd"
+    assert row["match_method"] in {"EXACT_ALIAS", "EXACT_OFFICIAL"}
+    assert (output_root / "Nexteer Automotive India Pvt. Ltd" / "2022" / "20222500177.pdf").exists()
+    assert not (output_root / "HTF ACD Nexteer" / "2022" / "20222500177.pdf").exists()
 
 
 def test_client_alias_csv_uses_exact_alias_not_fuzzy():
