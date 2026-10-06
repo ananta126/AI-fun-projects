@@ -49,7 +49,8 @@ def promote_rows(
         reason = (row.get("Failure Reason") or "").strip()
         if only_customer_failures and reason not in CUSTOMER_REASONS:
             continue
-        customer_id = (row.get("Suggested Customer ID") or "").strip()
+        correct = (row.get("Correct Customer ID") or "").strip()
+        customer_id = correct or (row.get("Suggested Customer ID") or "").strip()
         alias = (row.get("Raw OCR Customer") or "").strip()
         if not customer_id or not alias:
             continue
@@ -75,19 +76,77 @@ def load_existing_aliases(path: Path) -> set[str]:
     return norms
 
 
-def write_aliases(path: Path, rows: list[dict], append: bool) -> int:
+def load_alias_rows(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        return []
+    rows: list[dict[str, str]] = []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            alias = (row.get("Alias") or "").strip()
+            customer_id = (row.get("Customer ID") or "").strip()
+            if alias and customer_id:
+                rows.append({"Alias": alias, "Customer ID": customer_id})
+    return rows
+
+
+def write_alias_rows(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["Alias", "Customer ID"]
-    existing = load_existing_aliases(path) if append else set()
-    new_rows = [r for r in rows if normalize_customer(r["Alias"]) not in existing]
-    mode = "a" if append and path.is_file() else "w"
-    with path.open(mode, encoding="utf-8-sig", newline="") as handle:
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        if mode == "w":
-            writer.writeheader()
-        for row in new_rows:
-            writer.writerow(row)
-    return len(new_rows)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def merge_alias_candidates(
+    path: Path,
+    candidates: list[dict[str, str]],
+    *,
+    repoint: bool = True,
+) -> dict[str, int]:
+    """Append new aliases; optionally move existing normalized spellings to a new Customer ID."""
+    rows = load_alias_rows(path)
+    norm_to_index: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        norm = normalize_customer(row["Alias"])
+        if norm and norm not in norm_to_index:
+            norm_to_index[norm] = index
+
+    added = repointed = skipped_same = 0
+    for cand in candidates:
+        alias = (cand.get("Alias") or "").strip()
+        customer_id = (cand.get("Customer ID") or "").strip()
+        if not alias or not customer_id:
+            continue
+        norm = normalize_customer(alias)
+        if not norm:
+            continue
+        if norm in norm_to_index:
+            idx = norm_to_index[norm]
+            if rows[idx]["Customer ID"] == customer_id:
+                skipped_same += 1
+            elif repoint:
+                rows[idx]["Customer ID"] = customer_id
+                if rows[idx]["Alias"] != alias:
+                    rows[idx]["Alias"] = alias
+                repointed += 1
+            else:
+                skipped_same += 1
+            continue
+        rows.append({"Alias": alias, "Customer ID": customer_id})
+        norm_to_index[norm] = len(rows) - 1
+        added += 1
+
+    write_alias_rows(path, rows)
+    return {"added": added, "repointed": repointed, "skipped_same": skipped_same}
+
+
+def write_aliases(path: Path, rows: list[dict], append: bool) -> int:
+    if append and path.is_file():
+        stats = merge_alias_candidates(path, rows, repoint=False)
+        return stats["added"]
+    write_alias_rows(path, rows)
+    return len(rows)
 
 
 def main(argv: list[str] | None = None) -> int:
