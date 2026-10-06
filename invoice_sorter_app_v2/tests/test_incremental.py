@@ -520,6 +520,33 @@ def test_two_column_alias_xlsx_without_csv(tmp_path, monkeypatch):
     assert all(item.official_name for item in master.aliases)
 
 
+def test_nexteer_automotive_is_separate_from_htf_acd_nexteer():
+    from core.customer_master import load_customer_master
+    from core.matching import AliasRef, CustomerRef, match_customer, normalize_customer
+
+    master = load_customer_master()
+    assert master is not None
+    customers = [
+        CustomerRef(item.customer_id, item.official_name, normalize_customer(item.official_name))
+        for item in master.customers
+    ]
+    aliases = [
+        AliasRef(normalize_customer(item.alias), item.customer_id, item.alias)
+        for item in master.aliases
+    ]
+    match = match_customer(
+        "Nexteer Automotive India Pvt. Ltd",
+        customers,
+        aliases,
+        master.review_norms,
+    )
+    assert match.accepted
+    assert match.customer_id == "C132"
+    assert match.official_name == "Nexteer Automotive India Pvt. Ltd"
+    htf = next(c for c in master.customers if c.customer_id == "C044")
+    assert htf.official_name == "HTF ACD Nexteer"
+
+
 def test_client_alias_csv_uses_exact_alias_not_fuzzy():
     from core.customer_master import load_customer_master
 
