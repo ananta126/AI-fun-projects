@@ -125,7 +125,7 @@ def test_ocr_pdf_reads_only_first_page(tmp_path):
 def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
-    invoice_dir = input_root / "25-Jun-26" / "Invoice"
+    invoice_dir = input_root / "25-Jun-26" / "Invoice" / "01_2026"
     source = write_text_pdf(invoice_dir / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
 
     results = process(input_root, output_root)
@@ -137,7 +137,7 @@ def test_process_one_pdf_as_one_complete_invoice_package(tmp_path):
     assert copied[0]["source_pages"] == "1-3"
 
     destination = output_root / "Porite India Pvt. Ltd" / "2026" / "20242500788.pdf"
-    done_source = input_root / "25-Jun-26_done" / "Invoice" / "3344.pdf"
+    done_source = input_root / "25-Jun-26_done" / "Invoice" / "01_2026_done" / "3344.pdf"
     assert destination.exists()
     assert done_source.exists()
     assert destination.stat().st_size == done_source.stat().st_size
@@ -148,7 +148,7 @@ def test_process_does_not_scan_supporting_pages(tmp_path, monkeypatch):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     source = write_scanned_pdf(
-        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        input_root / "25-Jun-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
 
@@ -167,7 +167,7 @@ def test_process_does_not_scan_supporting_pages(tmp_path, monkeypatch):
 def test_missing_invoice_page_is_review(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
-    pdf_path = input_root / "25-Jun-26" / "Invoice" / "notes.pdf"
+    pdf_path = input_root / "25-Jun-26" / "Invoice" / "01_2026" / "notes.pdf"
     pdf_path.parent.mkdir(parents=True)
     import fitz
 
@@ -197,12 +197,12 @@ def test_exception_excel_lists_unreadable_and_skipped(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     write_text_pdf(
-        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        input_root / "25-Jun-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
     import fitz
 
-    bad = input_root / "26-Jun-26" / "Invoice" / "notes.pdf"
+    bad = input_root / "26-Jun-26" / "Invoice" / "01_2026" / "notes.pdf"
     bad.parent.mkdir(parents=True)
     doc = fitz.open()
     page = doc.new_page()
@@ -252,7 +252,7 @@ def test_retry_wrapper_returns_only_first_page(tmp_path, monkeypatch):
 def test_duplicate_destination_is_not_overwritten(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
-    invoice_dir = input_root / "25-Jun-26" / "Invoice"
+    invoice_dir = input_root / "25-Jun-26" / "Invoice" / "01_2026"
     write_text_pdf(invoice_dir / "3344.pdf", invoices=[SAMPLE_INVOICES[0]])
     import fitz
 
@@ -284,11 +284,11 @@ def test_nested_june_folder_creates_customer_then_day(tmp_path):
     input_root = tmp_path / "June 26"
     output_root = tmp_path / "Output"
     write_text_pdf(
-        input_root / "25-Jun-26" / "Invoice" / "3344.pdf",
+        input_root / "25-Jun-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
     write_text_pdf(
-        input_root / "26-Jun-26" / "Invoice" / "other.pdf",
+        input_root / "26-Jun-26" / "Invoice" / "01_2026" / "other.pdf",
         invoices=[SAMPLE_INVOICES[2]],
     )
     (input_root / "27-Jun-26" / "PIS").mkdir(parents=True)
@@ -314,11 +314,11 @@ def test_zip_input_extracts_then_sorts_by_customer_and_day(tmp_path):
 
     bundle = tmp_path / "bundle"
     write_text_pdf(
-        bundle / "June 26" / "25-Jun-26" / "Invoice" / "3344.pdf",
+        bundle / "June 26" / "25-Jun-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
     write_text_pdf(
-        bundle / "June 26" / "30-Jun-26" / "Invoice" / "later.pdf",
+        bundle / "June 26" / "30-Jun-26" / "Invoice" / "01_2026" / "later.pdf",
         invoices=[SAMPLE_INVOICES[1]],
     )
     zip_path = tmp_path / "June 26-20260831T053601Z-001.zip"
@@ -399,7 +399,7 @@ def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
 
     bundle = tmp_path / "bundle"
     write_text_pdf(
-        bundle / "June 26" / "25-Jun-26" / "Invoice" / "3344.pdf",
+        bundle / "June 26" / "25-Jun-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
     src_zip = tmp_path / "month.zip"
@@ -446,7 +446,7 @@ def test_output_year_comes_from_invoice_unit_not_printed_date(tmp_path):
     assert not (output_root / "Porite India Pvt. Ltd" / "2024").exists()
 
 
-def test_missing_printed_date_still_uses_source_year(tmp_path):
+def test_missing_printed_date_still_uses_invoice_unit_year(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     page = (
@@ -458,7 +458,7 @@ def test_missing_printed_date_still_uses_source_year(tmp_path):
     )
     import fitz
 
-    pdf_path = input_root / "25-Jun-26" / "Invoice" / "nodate.pdf"
+    pdf_path = input_root / "25-Jun-26" / "Invoice" / "01_2026" / "nodate.pdf"
     pdf_path.parent.mkdir(parents=True)
     doc = fitz.open()
     fitz_page = doc.new_page()

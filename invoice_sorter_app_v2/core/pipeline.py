@@ -29,7 +29,6 @@ from core.sorter import (
     worker_count,
     write_exception_report,
     year_from_invoice_unit,
-    year_from_scan_folder,
     EXCEPTION_REPORT_NAME,
 )
 
@@ -105,9 +104,14 @@ def iter_work_units(date_folder: Path):
 
 
 def _derived_year(unit: dict, date_folder: Path) -> int | None:
+    """Filing year from the invoice unit folder name only (``NN_YYYY``).
+
+    Scan-date folders and printed dates are never used for output year.
+    Direct PDFs under ``Invoice/`` have no unit folder → None.
+    """
     if unit["kind"] == "subfolder":
         return year_from_invoice_unit(unit["invoice_folder"])
-    return year_from_scan_folder(date_folder.name)
+    return None
 
 
 def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
@@ -193,20 +197,22 @@ def _classify(base: dict, customers, aliases, blocked=None) -> dict:
     invoice_no = base["invoice_number"]
     raw = base["raw_ocr_customer"]
     if not year:
-        if base.get("unit_kind") == "subfolder":
-            folder = base.get("source_invoice_folder") or ""
+        folder = base.get("source_invoice_folder") or ""
+        if base.get("unit_kind") == "direct":
+            base.update({
+                "state": "REVIEW_REQUIRED",
+                "reason_code": "INVOICE_YEAR_NOT_DETECTED",
+                "reason_detail": (
+                    "PDF is directly under Invoice/; expected a sequence_YEAR subfolder (e.g. 01_2022)"
+                ),
+            })
+        else:
             base.update({
                 "state": "REVIEW_REQUIRED",
                 "reason_code": "INVOICE_YEAR_NOT_DETECTED",
                 "reason_detail": (
                     f"Invoice unit folder '{folder}' does not match sequence_YEAR (e.g. 01_2022)"
                 ),
-            })
-        else:
-            base.update({
-                "state": "REVIEW_REQUIRED",
-                "reason_code": "SOURCE_YEAR_NOT_DETECTED",
-                "reason_detail": "Could not read a year from the source date folder",
             })
         return base
     if not invoice_no:
@@ -599,6 +605,7 @@ def import_corrections(csv_path: Path, output_root: Path):
                 )
                 continue
             invoice_no = correct_invoice or row["invoice_number"]
+            # Correct Year in the review CSV overrides derived_year from the invoice unit folder.
             year = correct_year or row["derived_year"]
             if not invoice_no:
                 store.update_state(

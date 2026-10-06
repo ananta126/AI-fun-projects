@@ -263,10 +263,10 @@ def parse_date_folder(folder_name: str):
 
 
 def year_from_scan_folder(folder_name: str) -> int | None:
-    """Year from a scan-date folder name (direct PDFs under Invoice/ only).
+    """Parse year from a scan-date folder name (legacy helper; not used for filing).
 
-    ``01-Sep-26`` → 2026, ``03-Jan-27`` → 2027. ``25 September`` has no year and
-    returns None so the document goes to REVIEW.
+    ``01-Sep-26`` → 2026, ``03-Jan-27`` → 2027. Output year comes from
+    ``year_from_invoice_unit`` on ``Invoice/`` subfolders only.
     """
     parsed = parse_date_folder(folder_name)
     if parsed:
