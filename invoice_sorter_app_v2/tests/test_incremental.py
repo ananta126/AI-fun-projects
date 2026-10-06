@@ -480,6 +480,29 @@ def test_review_list_spellings_are_not_filed(tmp_path):
     assert {row["reason_code"] for row in results} == {"CUSTOMER_NOT_MATCHED"}
 
 
+def test_two_column_alias_xlsx_without_csv(tmp_path, monkeypatch):
+    """FINAL xlsx Alias Master (Alias, Customer ID) must load when CSV is absent."""
+    import shutil
+
+    from core.customer_master import (
+        MASTER_FILENAME,
+        alias_master_csv_path,
+        load_customer_master,
+        master_path,
+    )
+    from core.sorter import app_root
+
+    real_root = app_root()
+    shutil.copy(real_root / MASTER_FILENAME, tmp_path / MASTER_FILENAME)
+    monkeypatch.setattr("core.customer_master.app_root", lambda: tmp_path)
+    assert not alias_master_csv_path().is_file()
+    master = load_customer_master(master_path())
+    assert master is not None
+    assert len(master.customers) >= 100
+    assert len(master.aliases) >= 100
+    assert all(item.official_name for item in master.aliases)
+
+
 def test_client_alias_csv_uses_exact_alias_not_fuzzy():
     from core.customer_master import load_customer_master
 

@@ -36,6 +36,7 @@ jobs:
           Copy-Item packaging/Run-InvoiceSorter.bat dist/InvoiceSorter/"Run Invoice Sorter.bat"
           Copy-Item customers.txt dist/InvoiceSorter/customers.txt
           Copy-Item customer_alias_mapping.csv dist/InvoiceSorter/customer_alias_mapping.csv
+          Copy-Item customer_alias_mapping_updated.csv dist/InvoiceSorter/customer_alias_mapping_updated.csv
           Copy-Item customer_master_alias_mapping.xlsx dist/InvoiceSorter/customer_master_alias_mapping.xlsx
       - uses: actions/upload-artifact@v4
         with:

@@ -247,6 +247,17 @@ def alias_sheet_rows(path: Path | None = None, official_by_id: dict[str, str] | 
         workbook.close()
 
 
+def master_files_status() -> dict[str, bool]:
+    """Which customer-master files are present beside the app (for diagnostics)."""
+    root = app_root()
+    return {
+        "app_root": str(root),
+        "xlsx": master_path().is_file(),
+        "alias_csv_updated": alias_master_csv_path().is_file(),
+        "alias_csv_legacy": (root / "customer_alias_mapping.csv").is_file(),
+    }
+
+
 def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
     """Return the workbook, or None when it is not next to the app."""
     path = Path(path) if path else master_path()

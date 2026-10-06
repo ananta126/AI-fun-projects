@@ -5,7 +5,8 @@ Invoice Sorter — how to run (no Python)
    If Windows says the zip is hundreds of GB, that number is wrong.
    Install 7-Zip (https://www.7-zip.org/) and extract with 7-Zip.
    Keep every file next to InvoiceSorter.exe, including
-   customer_alias_mapping.csv and customer_master_alias_mapping.xlsx.
+   customer_master_alias_mapping.xlsx and customer_alias_mapping_updated.csv
+   (FINAL alias list). Legacy customer_alias_mapping.csv may also be present.
    Do not copy the .exe out by itself.
 
 2. Double-click InvoiceSorter.exe
@@ -19,15 +20,17 @@ Invoice Sorter — how to run (no Python)
    Use the same output folder every day so customer folders are reused.
 
 5. Copied files land in:
-   Customer / year from the scan folder / source day / invoice number.pdf
-   Example: 01-Sep-26 becomes year 2026.
+   Official Customer / YYYY / invoice number.pdf
+   YYYY comes from the folder under invoice/ (e.g. 01_2022 → 2022), not the
+   scan-date folder (e.g. 04-Aug-26). PDFs sitting directly under invoice/
+   (no NN_YYYY folder) go to the review CSV as INVOICE_YEAR_NOT_DETECTED.
    When every invoice in a source folder copied, that folder is renamed
    with _done and is skipped next time. PIS folders are not processed.
 
 6. Files that could not be filed are in invoice_sorter_review.csv
    (Open review CSV). Fill Correct Customer ID using customer_ids.csv
    (Open customer list). Open alias mapping shows the approved OCR spellings
-   from customer_alias_mapping.csv. Leave invoice number and year blank if they
+   from customer_alias_mapping_updated.csv. Leave invoice number and year blank if they
    are already correct. Save the CSV, then click Import corrections.
    That step does not OCR the file again.
 

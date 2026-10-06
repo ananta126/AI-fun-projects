@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
@@ -32,6 +33,8 @@ from core.pipeline import import_corrections  # noqa: E402
 from core.review_csv import ALIAS_MAPPING_NAME, CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
 from core.sorter import EXCEPTION_REPORT_NAME, app_root, process  # noqa: E402
 
+SORT_ERROR_LOG = "invoice_sorter_sort_error.log"
+
 
 class SortWorker(QObject):
     progress = Signal(int, int, str)
@@ -50,8 +53,13 @@ class SortWorker(QObject):
 
             results = process(self.source, self.output, progress=on_progress)
             self.finished.emit(results)
-        except Exception as exc:  # noqa: BLE001 — surface any engine error in the UI
-            self.failed.emit(str(exc))
+        except Exception:  # noqa: BLE001 — surface any engine error in the UI
+            tb = traceback.format_exc()
+            try:
+                (self.output / SORT_ERROR_LOG).write_text(tb, encoding="utf-8")
+            except OSError:
+                pass
+            self.failed.emit(tb)
 
 
 class InvoiceSorterWindow(QMainWindow):
@@ -64,7 +72,8 @@ class InvoiceSorterWindow(QMainWindow):
 
         intro = QLabel(
             "Desktop app — no browser. Each PDF is one invoice. Page 1 is read; "
-            "the whole file is copied to Customer / year from the scan folder / source day / GST invoice no.pdf. "
+            "the whole file is copied to Official Customer / YYYY / invoice number.pdf. "
+            "YYYY comes from the folder under invoice/ (e.g. 01_2022 → 2022), not the scan-date folder. "
             "Unknown customers stay in the review CSV until you fill Correct Customer ID."
         )
         intro.setWordWrap(True)
@@ -120,7 +129,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.status = QLabel(
-            "Ready. PIS folders are ignored. Year comes from the scan-date folder (01-Sep-26 → 2026). "
+            "Ready. PIS folders are ignored. Output year comes from invoice/NN_YYYY (e.g. 01_2022 → 2022). "
             "Finished source folders are renamed with _done."
         )
         self.status.setWordWrap(True)
@@ -265,8 +274,19 @@ class InvoiceSorterWindow(QMainWindow):
 
     def _on_failed(self, message: str):
         self.run_button.setEnabled(True)
-        QMessageBox.critical(self, "Sort failed", message)
-        self.status.setText(message)
+        log_hint = ""
+        if self._output_root is not None:
+            log_path = self._output_root / SORT_ERROR_LOG
+            if log_path.is_file():
+                log_hint = f"\n\nFull traceback saved to:\n{log_path}"
+        display = message
+        if len(display) > 3500:
+            display = display[:3500] + "\n…(truncated)" + log_hint
+        elif log_hint and log_hint not in display:
+            display = display + log_hint
+        QMessageBox.critical(self, "Sort failed", display)
+        short = message.splitlines()[-1] if message else "Sort failed"
+        self.status.setText(short[:500])
 
     def _open_output(self):
         if self._output_root is None:
