@@ -51,47 +51,101 @@ def _clean(value) -> str:
     return " ".join(str(value or "").replace("\xa0", " ").split()).strip()
 
 
-def _aliases_from_csv(path: Path) -> tuple[MasterAlias, ...]:
+def _csv_is_final_alias_schema(fieldnames: list[str] | None) -> bool:
+    if not fieldnames:
+        return False
+    cols = {c.strip() for c in fieldnames if c}
+    return "Alias" in cols and "Customer ID" in cols and "Official Customer" not in cols
+
+
+def _official_name_for_alias_row(
+    customer_id: str,
+    official_from_row: str,
+    official_by_id: dict[str, str],
+    final_schema: bool,
+) -> str:
+    if final_schema:
+        if not customer_id or customer_id not in official_by_id:
+            return ""
+        return official_by_id[customer_id]
+    if official_from_row:
+        return official_from_row
+    if customer_id and customer_id in official_by_id:
+        return official_by_id[customer_id]
+    return ""
+
+
+def _aliases_from_csv(
+    path: Path,
+    official_by_id: dict[str, str] | None = None,
+) -> tuple[MasterAlias, ...]:
     import csv
 
+    official_by_id = official_by_id or {}
     aliases: list[MasterAlias] = []
     seen_alias: set[str] = set()
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
+        reader = csv.DictReader(handle)
+        final_schema = _csv_is_final_alias_schema(reader.fieldnames)
+        for row in reader:
             alias = _clean(row.get("Alias"))
             customer_id = _clean(row.get("Customer ID"))
-            official_name = _clean(row.get("Official Customer"))
+            official_name = _official_name_for_alias_row(
+                customer_id,
+                _clean(row.get("Official Customer")),
+                official_by_id,
+                final_schema,
+            )
             norm = normalize_customer(alias)
-            if not norm or not customer_id or norm in seen_alias:
+            if not norm or not customer_id or not official_name or norm in seen_alias:
                 continue
             seen_alias.add(norm)
             aliases.append(MasterAlias(customer_id, official_name, alias))
     return tuple(aliases)
 
 
-def _alias_rows_from_csv(path: Path) -> list[dict]:
+def _alias_rows_from_csv(
+    path: Path,
+    official_by_id: dict[str, str] | None = None,
+) -> list[dict]:
     import csv
 
+    official_by_id = official_by_id or {}
     rows = []
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
+        reader = csv.DictReader(handle)
+        final_schema = _csv_is_final_alias_schema(reader.fieldnames)
+        for row in reader:
             alias = _clean(row.get("Alias"))
             if not alias:
                 continue
+            customer_id = _clean(row.get("Customer ID"))
+            official_name = _official_name_for_alias_row(
+                customer_id,
+                _clean(row.get("Official Customer")),
+                official_by_id,
+                final_schema,
+            )
+            if not customer_id or not official_name:
+                continue
             rows.append({
-                "customer_id": _clean(row.get("Customer ID")),
-                "official_name": _clean(row.get("Official Customer")),
+                "customer_id": customer_id,
+                "official_name": official_name,
                 "alias": alias,
-                "match_score": row.get("Match Score", ""),
+                "match_score": row.get("Match Score", "") if not final_schema else "",
             })
     return rows
 
 
-def alias_sheet_rows(path: Path | None = None) -> list[dict]:
+def alias_sheet_rows(path: Path | None = None, official_by_id: dict[str, str] | None = None) -> list[dict]:
     """Every approved alias row, in file order, including repeated spellings."""
     csv_path = alias_master_csv_path()
     if csv_path.is_file():
-        return _alias_rows_from_csv(csv_path)
+        if official_by_id is None:
+            master = load_customer_master(path)
+            if master is not None:
+                official_by_id = {c.customer_id: c.official_name for c in master.customers}
+        return _alias_rows_from_csv(csv_path, official_by_id)
     path = Path(path) if path else master_path()
     if not path.is_file():
         return []
@@ -136,9 +190,10 @@ def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
             seen_names.add(name)
             customers.append(MasterCustomer(customer_id, name))
 
+        official_by_id = {c.customer_id: c.official_name for c in customers}
         csv_path = alias_master_csv_path()
         if csv_path.is_file():
-            aliases = list(_aliases_from_csv(csv_path))
+            aliases = list(_aliases_from_csv(csv_path, official_by_id))
         else:
             aliases = []
             seen_alias = set()

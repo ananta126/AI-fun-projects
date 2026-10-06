@@ -154,19 +154,27 @@ def test_alias_reuses_existing_customer_folder(tmp_path):
     output_root = tmp_path / "Output"
     store = Store(output_root / "invoice_processor.db")
     store.seed(load_official_customers())
-    skf = store.customer_by_name("SKF India Ltd.Pune")
-    store.set_alias("SKF India Pvt Ltd", skf["customer_id"])
+    official = "ACE Inotec MFG.Pvt.Ltd."
+    ace = store.customer_by_name(official)
+    store.set_alias("ACE INOTEC MANUFACTURING PVT. LTD", ace["customer_id"])
     store.close()
 
     input_root = tmp_path / "Input"
-    _invoice_in_unit(input_root, "01-Sep-26", "01_2026", "a.pdf", "20262500111", "SKF India Ltd.Pune")
-    _invoice_in_unit(input_root, "02-Sep-26", "01_2026", "b.pdf", "20262500222", "SKF India Pvt Ltd")
+    _invoice_in_unit(input_root, "01-Sep-26", "01_2026", "a.pdf", "20262500111", official)
+    _invoice_in_unit(
+        input_root,
+        "02-Sep-26",
+        "01_2026",
+        "b.pdf",
+        "20262500222",
+        "ACE INOTEC MANUFACTURING PVT. LTD",
+    )
 
     results = process(input_root, output_root)
     copied = [row for row in results if row["status"] == "COPIED"]
     assert len(copied) == 2
-    assert {row["customer_id"] for row in copied} == {skf["customer_id"]}
-    customer_dir = output_root / "SKF India Ltd.Pune" / "2026"
+    assert {row["customer_id"] for row in copied} == {ace["customer_id"]}
+    customer_dir = output_root / "ACE Inotec MFG.Pvt.Ltd" / "2026"
     assert (customer_dir / "20262500111.pdf").exists()
     assert (customer_dir / "20262500222.pdf").exists()
     assert len([path for path in output_root.iterdir() if path.is_dir()]) == 1
