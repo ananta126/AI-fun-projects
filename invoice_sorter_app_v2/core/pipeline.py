@@ -291,6 +291,30 @@ def result_from_row(row) -> dict:
     }
 
 
+def _skipped_result(
+    root: Path,
+    date_folder: Path,
+    reason: str,
+    pdf: Path | None = None,
+) -> dict:
+    source_file = ""
+    if pdf is not None:
+        try:
+            source_file = str(pdf.relative_to(root))
+        except ValueError:
+            source_file = pdf.name
+    return {
+        "status": "SKIPPED",
+        "source_file": source_file,
+        "date_folder": date_folder.name,
+        "reason": reason,
+        "invoice_number": "",
+        "customer": "",
+        "year": "",
+        "source_pages": "",
+    }
+
+
 def execute_document(store: Store, row, output_root: Path):
     if row["state"] not in {"AUTO_MATCHED", "CORRECTED"}:
         return row
@@ -470,23 +494,37 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
         for date_folder in date_folders:
             units = iter_work_units(date_folder)
             if units is None:
-                skipped.append({
-                    "status": "SKIPPED",
-                    "source_file": "",
-                    "date_folder": date_folder.name,
-                    "reason": "Invoice folder not found",
-                    "invoice_number": "",
-                    "customer": "",
-                    "year": "",
-                    "source_pages": "",
-                })
+                skipped.append(_skipped_result(
+                    root,
+                    date_folder,
+                    "Invoice folder not found (expected lowercase invoice/ under the scan-date folder)",
+                ))
+                continue
+            if not units:
+                skipped.append(_skipped_result(
+                    root,
+                    date_folder,
+                    "No invoice units under invoice/ (folders ending in _done are skipped; rename 01_2022_done back to 01_2022 to re-run)",
+                ))
                 continue
             for unit in units:
                 for pdf in unit["pdfs"]:
                     existing = store.get_by_source(str(pdf.resolve()))
                     if existing and existing["state"] == "COMPLETED":
+                        skipped.append(_skipped_result(
+                            root,
+                            date_folder,
+                            "Already processed in this output folder (delete invoice_processor.db or use a new output folder to re-read)",
+                            pdf=pdf,
+                        ))
                         continue
                     jobs.append((date_folder, unit, pdf, root))
+        if not jobs and date_folders and not skipped:
+            skipped.append(_skipped_result(
+                root,
+                date_folders[0],
+                "No PDFs queued: invoice subfolders may be renamed with _done, or only PIS folders remain",
+            ))
         produced = []
         if jobs:
             produced = _run_jobs(jobs, store, customers, aliases, batch_id, output_root, progress, execute, blocked)
