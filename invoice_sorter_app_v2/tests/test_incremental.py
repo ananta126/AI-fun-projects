@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import fitz
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -478,6 +479,22 @@ def test_review_list_spellings_are_not_filed(tmp_path):
     results = process(input_root, output_root)
     assert {row["status"] for row in results} == {"REVIEW"}
     assert {row["reason_code"] for row in results} == {"CUSTOMER_NOT_MATCHED"}
+
+
+def test_ensure_customer_master_ready_ok():
+    from core.customer_master import ensure_customer_master_ready
+
+    master = ensure_customer_master_ready()
+    assert len(master.customers) >= 100
+    assert len(master.aliases) >= 100
+
+
+def test_ensure_customer_master_ready_missing_xlsx(tmp_path, monkeypatch):
+    from core.customer_master import CustomerMasterError, ensure_customer_master_ready
+
+    monkeypatch.setattr("core.customer_master.app_root", lambda: tmp_path)
+    with pytest.raises(CustomerMasterError, match="was not found"):
+        ensure_customer_master_ready()
 
 
 def test_two_column_alias_xlsx_without_csv(tmp_path, monkeypatch):

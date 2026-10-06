@@ -29,9 +29,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.customer_master import CustomerMasterError, describe_master_files_status  # noqa: E402
 from core.pipeline import import_corrections  # noqa: E402
 from core.review_csv import ALIAS_MAPPING_NAME, CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
 from core.sorter import EXCEPTION_REPORT_NAME, app_root, process  # noqa: E402
+from core.version import app_version  # noqa: E402
 
 SORT_ERROR_LOG = "invoice_sorter_sort_error.log"
 
@@ -53,6 +55,12 @@ class SortWorker(QObject):
 
             results = process(self.source, self.output, progress=on_progress)
             self.finished.emit(results)
+        except CustomerMasterError as exc:
+            try:
+                (self.output / SORT_ERROR_LOG).write_text(str(exc), encoding="utf-8")
+            except OSError:
+                pass
+            self.failed.emit(str(exc))
         except Exception:  # noqa: BLE001 — surface any engine error in the UI
             tb = traceback.format_exc()
             try:
@@ -65,7 +73,7 @@ class SortWorker(QObject):
 class InvoiceSorterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Invoice Sorter")
+        self.setWindowTitle(f"Invoice Sorter ({app_version()})")
         self.resize(1100, 680)
         self._thread = None
         self._worker = None
@@ -162,6 +170,15 @@ class InvoiceSorterWindow(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
+        self._refresh_master_status()
+
+    def _refresh_master_status(self):
+        master_line = describe_master_files_status()
+        self.status.setText(
+            f"Build {app_version()}. {master_line} "
+            "PIS folders are ignored. Output year comes from invoice/NN_YYYY (e.g. 01_2022 → 2022). "
+            "Finished source folders are renamed with _done."
+        )
 
     def _browse_zip(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose invoice zip", "", "Zip (*.zip)")
@@ -278,15 +295,20 @@ class InvoiceSorterWindow(QMainWindow):
         if self._output_root is not None:
             log_path = self._output_root / SORT_ERROR_LOG
             if log_path.is_file():
-                log_hint = f"\n\nFull traceback saved to:\n{log_path}"
+                log_hint = f"\n\nDetails saved to:\n{log_path}"
+        is_master = "Cannot sort:" in message or "Customer master" in message
         display = message
-        if len(display) > 3500:
+        if not is_master and len(display) > 3500:
             display = display[:3500] + "\n…(truncated)" + log_hint
         elif log_hint and log_hint not in display:
             display = display + log_hint
-        QMessageBox.critical(self, "Sort failed", display)
-        short = message.splitlines()[-1] if message else "Sort failed"
-        self.status.setText(short[:500])
+        title = "Customer master" if is_master else "Sort failed"
+        QMessageBox.critical(self, title, display)
+        if is_master:
+            self._refresh_master_status()
+        else:
+            short = message.splitlines()[-1] if message else "Sort failed"
+            self.status.setText(short[:500])
 
     def _open_output(self):
         if self._output_root is None:

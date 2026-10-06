@@ -18,6 +18,7 @@ call .venv\Scripts\activate.bat
 python -m pip install -r requirements.txt -r requirements-desktop.txt
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm packaging\invoice_sorter.spec
+copy /Y VERSION.txt dist\InvoiceSorter\
 copy /Y customers.txt dist\InvoiceSorter\
 copy /Y customer_alias_mapping.csv dist\InvoiceSorter\
 copy /Y customer_alias_mapping_updated.csv dist\InvoiceSorter\

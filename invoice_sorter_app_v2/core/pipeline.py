@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from core.customer_master import load_customer_master
+from core.customer_master import ensure_customer_master_ready, load_customer_master
 from core.db import Store
 from core.matching import AliasRef, CustomerRef, match_customer
 from core.review_csv import (
@@ -458,6 +458,7 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
     root = resolve_input(Path(root))
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
+    ensure_customer_master_ready()
     store = Store(output_root / "invoice_processor.db")
     try:
         blocked = _apply_master(store)

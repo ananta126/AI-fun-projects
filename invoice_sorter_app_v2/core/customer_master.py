@@ -8,6 +8,7 @@ shorter approved alias or a fuzzy score would otherwise accept them.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,10 @@ from core.sorter import app_root
 
 MASTER_FILENAME = "customer_master_alias_mapping.xlsx"
 ALIAS_MASTER_CSV_FILENAME = "customer_alias_mapping_updated.csv"
+
+
+class CustomerMasterError(RuntimeError):
+    """Customer master xlsx/csv beside the app failed validation."""
 
 
 @dataclass(frozen=True)
@@ -247,7 +252,7 @@ def alias_sheet_rows(path: Path | None = None, official_by_id: dict[str, str] | 
         workbook.close()
 
 
-def master_files_status() -> dict[str, bool]:
+def master_files_status() -> dict[str, bool | str]:
     """Which customer-master files are present beside the app (for diagnostics)."""
     root = app_root()
     return {
@@ -256,6 +261,52 @@ def master_files_status() -> dict[str, bool]:
         "alias_csv_updated": alias_master_csv_path().is_file(),
         "alias_csv_legacy": (root / "customer_alias_mapping.csv").is_file(),
     }
+
+
+def describe_master_files_status() -> str:
+    status = master_files_status()
+    root = status["app_root"]
+    if status["xlsx"] and status["alias_csv_updated"]:
+        return f"Master files OK ({root})."
+    parts = [f"App folder: {root}"]
+    if not status["xlsx"]:
+        parts.append(f"Missing {MASTER_FILENAME}")
+    if not status["alias_csv_updated"]:
+        parts.append(f"Missing {ALIAS_MASTER_CSV_FILENAME} (required beside the exe)")
+    if status["alias_csv_legacy"]:
+        parts.append("(legacy customer_alias_mapping.csv is present but not a substitute)")
+    return " ".join(parts)
+
+
+def ensure_customer_master_ready() -> CustomerMaster:
+    """Load and validate the customer master bundle before OCR starts."""
+    status = master_files_status()
+    if not status["xlsx"]:
+        raise CustomerMasterError(
+            f"Cannot sort: {MASTER_FILENAME} was not found next to the app.\n"
+            f"App folder: {status['app_root']}\n"
+            f"Unzip the full InvoiceSorter folder from GitHub Actions; do not copy only the .exe."
+        )
+    try:
+        master = load_customer_master()
+    except (IndexError, KeyError) as exc:
+        raise CustomerMasterError(
+            "Customer master file has an unexpected layout and could not be read.\n"
+            f"Replace {MASTER_FILENAME} and {ALIAS_MASTER_CSV_FILENAME} from the latest app zip.\n"
+            f"Diagnostics: {json.dumps(status)}"
+        ) from exc
+    if master is None:
+        raise CustomerMasterError(
+            f"Failed to open {MASTER_FILENAME} in {status['app_root']}."
+        )
+    if master.customers and not master.aliases:
+        raise CustomerMasterError(
+            "Customer master loaded but no approved aliases were found.\n"
+            f"Ensure {ALIAS_MASTER_CSV_FILENAME} is beside the exe (138 rows) or fix the "
+            "Alias Master sheet in the xlsx.\n"
+            f"Diagnostics: {json.dumps(status)}"
+        )
+    return master
 
 
 def load_customer_master(path: Path | None = None) -> CustomerMaster | None:
