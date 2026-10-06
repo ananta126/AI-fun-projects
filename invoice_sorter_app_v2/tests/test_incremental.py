@@ -520,10 +520,15 @@ def test_two_column_alias_xlsx_without_csv(tmp_path, monkeypatch):
     assert all(item.official_name for item in master.aliases)
 
 
-def test_nexteer_automotive_is_separate_from_htf_acd_nexteer():
-    from core.customer_master import load_customer_master
-    from core.matching import AliasRef, CustomerRef, match_customer, normalize_customer
+def test_c132_is_not_an_official_customer_id():
+    master = load_customer_master()
+    assert master is not None
+    ids = {c.customer_id for c in master.customers}
+    assert "C132" not in ids
 
+
+def test_nexteer_ocr_alias_maps_to_htf_acd_nexteer_c044():
+    """Regression: Nexteer legal-name OCR must file under C044 / HTF ACD Nexteer."""
     master = load_customer_master()
     assert master is not None
     customers = [
@@ -534,17 +539,36 @@ def test_nexteer_automotive_is_separate_from_htf_acd_nexteer():
         AliasRef(normalize_customer(item.alias), item.customer_id, item.alias)
         for item in master.aliases
     ]
-    match = match_customer(
-        "Nexteer Automotive India Pvt. Ltd",
-        customers,
-        aliases,
-        master.review_norms,
-    )
+    raw = "Nexteer Automotive India Pvt. Ltd"
+    match = match_customer(raw, customers, aliases, master.review_norms)
     assert match.accepted
-    assert match.customer_id == "C132"
-    assert match.official_name == "Nexteer Automotive India Pvt. Ltd"
-    htf = next(c for c in master.customers if c.customer_id == "C044")
-    assert htf.official_name == "HTF ACD Nexteer"
+    assert match.customer_id == "C044"
+    assert match.official_name == "HTF ACD Nexteer"
+    assert match.method == "EXACT_ALIAS"
+
+
+def test_nexteer_sort_completes_under_htf_acd_nexteer_folder(tmp_path):
+    """Sort flow: Nexteer OCR → C044, EXACT_ALIAS, COMPLETED (COPIED)."""
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    _invoice_in_unit(
+        input_root,
+        "01-Sep-26",
+        "01_2022",
+        "nexteer.pdf",
+        "20222500177",
+        "Nexteer Automotive India Pvt. Ltd",
+    )
+    results = process(input_root, output_root)
+    assert len(results) == 1
+    row = results[0]
+    assert row["status"] == "COPIED"
+    assert row["state"] == "COMPLETED"
+    assert row["customer_id"] == "C044"
+    assert row["customer"] == "HTF ACD Nexteer"
+    assert row["match_method"] == "EXACT_ALIAS"
+    assert (output_root / "HTF ACD Nexteer" / "2022" / "20222500177.pdf").exists()
+    assert not (output_root / "Nexteer Automotive India Pvt. Ltd").exists()
 
 
 def test_client_alias_csv_uses_exact_alias_not_fuzzy():
