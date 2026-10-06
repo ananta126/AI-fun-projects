@@ -153,6 +153,23 @@ def match_customer(
         top = [item for item in exact if item[0] == best_len]
         ids = {item[1] for item in top}
         if len(ids) > 1:
+            # Approved alias beats generic official on another ID at the same phrase length.
+            alias_hits = [item for item in top if item[3] == "EXACT_ALIAS"]
+            alias_ids = {item[1] for item in alias_hits}
+            if len(alias_ids) == 1:
+                _length, customer_id, official_name, method = alias_hits[0]
+                return MatchResult(
+                    True,
+                    customer_id,
+                    official_name,
+                    method,
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    normalized,
+                )
             first, second = top[0], top[1]
             return MatchResult(
                 False,

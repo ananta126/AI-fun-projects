@@ -232,6 +232,8 @@ Rapid Machining OCR `RAPID MACHINING TECHNOLOGIES PVT LTD (KOLHAPUR)` → tokens
 
 Porite → `Porite India Pvt. Ltd.`
 
+**Exact customer match (`match_customer`):** When two Customer IDs tie at the same exact phrase length, an **EXACT_ALIAS** on exactly one ID wins over **EXACT_OFFICIAL** on another (site vs generic LTD pairs). Dual **EXACT_OFFICIAL** with the same normalized name stays `CUSTOMER_AMBIGUOUS`.
+
 **Bug hints:**
 
 - A **shorter** official name whose tokens are a subset of a longer one can still win if scored higher… actually longer needle wins. Opposite problem: a long wrong customer that still subsequence-matches.
