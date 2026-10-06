@@ -263,7 +263,7 @@ def parse_date_folder(folder_name: str):
 
 
 def year_from_scan_folder(folder_name: str) -> int | None:
-    """Output year comes from the source scan-date folder, not the printed invoice date.
+    """Year from a scan-date folder name (direct PDFs under Invoice/ only).
 
     ``01-Sep-26`` → 2026, ``03-Jan-27`` → 2027. ``25 September`` has no year and
     returns None so the document goes to REVIEW.
@@ -278,6 +278,18 @@ def year_from_scan_folder(folder_name: str) -> int | None:
         except ValueError:
             continue
     return None
+
+
+_INVOICE_UNIT_YEAR_RE = re.compile(r"^\d+_(\d{4})$")
+
+
+def year_from_invoice_unit(folder_name: str) -> int | None:
+    """Output year from an immediate child of Invoice/, e.g. ``01_2022`` → 2022."""
+    text = (folder_name or "").strip()
+    match = _INVOICE_UNIT_YEAR_RE.match(text)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def render_page_band(page, scale=OCR_SCALE, fraction=HEADER_FRACTION):

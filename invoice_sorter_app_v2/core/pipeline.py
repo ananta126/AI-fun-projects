@@ -28,6 +28,7 @@ from core.sorter import (
     safe_name,
     worker_count,
     write_exception_report,
+    year_from_invoice_unit,
     year_from_scan_folder,
     EXCEPTION_REPORT_NAME,
 )
@@ -103,9 +104,15 @@ def iter_work_units(date_folder: Path):
     return units
 
 
+def _derived_year(unit: dict, date_folder: Path) -> int | None:
+    if unit["kind"] == "subfolder":
+        return year_from_invoice_unit(unit["invoice_folder"])
+    return year_from_scan_folder(date_folder.name)
+
+
 def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     source_path = str(pdf.resolve())
-    year = year_from_scan_folder(date_folder.name)
+    year = _derived_year(unit, date_folder)
     base = {
         "source_path": source_path,
         "source_rel": str(pdf.relative_to(root)) if root in pdf.parents or pdf.parent == root else pdf.name,
@@ -186,11 +193,21 @@ def _classify(base: dict, customers, aliases, blocked=None) -> dict:
     invoice_no = base["invoice_number"]
     raw = base["raw_ocr_customer"]
     if not year:
-        base.update({
-            "state": "REVIEW_REQUIRED",
-            "reason_code": "SOURCE_YEAR_NOT_DETECTED",
-            "reason_detail": "Could not read a year from the source date folder",
-        })
+        if base.get("unit_kind") == "subfolder":
+            folder = base.get("source_invoice_folder") or ""
+            base.update({
+                "state": "REVIEW_REQUIRED",
+                "reason_code": "INVOICE_YEAR_NOT_DETECTED",
+                "reason_detail": (
+                    f"Invoice unit folder '{folder}' does not match sequence_YEAR (e.g. 01_2022)"
+                ),
+            })
+        else:
+            base.update({
+                "state": "REVIEW_REQUIRED",
+                "reason_code": "SOURCE_YEAR_NOT_DETECTED",
+                "reason_detail": "Could not read a year from the source date folder",
+            })
         return base
     if not invoice_no:
         base.update({

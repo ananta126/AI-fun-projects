@@ -352,9 +352,8 @@ def test_two_inner_units_under_same_day(tmp_path):
         ("20242500788", "25-Jun-26"),
         ("20242500752", "25-Jun-26"),
     }
-    customer_year = output_root / "Porite India Pvt. Ltd" / "2026"
-    assert (customer_year / "20242500788.pdf").exists()
-    assert (customer_year / "20242500752.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2024" / "20242500788.pdf").exists()
+    assert (output_root / "Porite India Pvt. Ltd" / "2023" / "20242500752.pdf").exists()
 
 
 def test_zip_reextract_when_archive_updated(tmp_path):
@@ -390,9 +389,9 @@ def test_zip_reextract_when_archive_updated(tmp_path):
     assert (extract / "25-Jun-26" / "Invoice" / "1_2024" / "a.pdf").is_file()
 
     process(zip_path, output_root)
-    customer_year = output_root / "Porite India Pvt. Ltd" / "2026"
-    assert (customer_year / "20242500788.pdf").exists()
-    assert (customer_year / "20242500752.pdf").exists()
+    base = output_root / "Porite India Pvt. Ltd"
+    assert (base / "2024" / "20242500788.pdf").exists()
+    assert (base / "2023" / "20242500752.pdf").exists()
 
 
 def test_uploaded_zip_returns_downloadable_customer_archive(tmp_path):
@@ -429,11 +428,11 @@ def _ocr_available() -> bool:
         return False
 
 
-def test_output_year_comes_from_source_folder_not_printed_date(tmp_path):
+def test_output_year_comes_from_invoice_unit_not_printed_date(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     write_text_pdf(
-        input_root / "01-Sep-26" / "Invoice" / "3344.pdf",
+        input_root / "01-Sep-26" / "Invoice" / "01_2026" / "3344.pdf",
         invoices=[SAMPLE_INVOICES[0]],
     )
 

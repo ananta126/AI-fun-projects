@@ -15,7 +15,12 @@ from core.customer_master import load_customer_master  # noqa: E402
 from core.db import Store  # noqa: E402
 from core.matching import AliasRef, CustomerRef, match_customer, normalize_customer  # noqa: E402
 from core.pipeline import import_corrections  # noqa: E402
-from core.sorter import load_official_customers, process, year_from_scan_folder  # noqa: E402
+from core.sorter import (  # noqa: E402
+    load_official_customers,
+    process,
+    year_from_invoice_unit,
+    year_from_scan_folder,
+)
 from tests.pdf_fixtures import invoice_page_text, write_text_pdf  # noqa: E402
 
 
@@ -39,6 +44,60 @@ def test_year_extraction_from_scan_folder():
     assert year_from_scan_folder("02-Oct-26") == 2026
     assert year_from_scan_folder("03-Jan-27") == 2027
     assert year_from_scan_folder("25 September") is None
+
+
+def test_year_extraction_from_invoice_unit_folder():
+    assert year_from_invoice_unit("01_2022") == 2022
+    assert year_from_invoice_unit("02_2023") == 2023
+    assert year_from_invoice_unit("03_2022") == 2022
+    assert year_from_invoice_unit("abc") is None
+    assert year_from_invoice_unit("1_23") is None
+
+
+def test_output_year_from_invoice_unit_not_scan_date(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    customer = "PORITE INDIA PVT.LTD."
+    _invoice(
+        input_root / "04-Aug-26" / "Invoice" / "01_2022" / "test.pdf",
+        "20222500111",
+        customer,
+    )
+    _invoice(
+        input_root / "04-Aug-26" / "Invoice" / "02_2023" / "test.pdf",
+        "20232500111",
+        customer,
+    )
+    _invoice(
+        input_root / "01-Jan-27" / "Invoice" / "03_2022" / "test.pdf",
+        "20222500112",
+        customer,
+    )
+    results = process(input_root, output_root)
+    copied = {Path(row["source_file"]).parent.name: row for row in results if row["status"] == "COPIED"}
+    assert copied["01_2022"]["year"] == "2022"
+    assert copied["02_2023"]["year"] == "2023"
+    assert copied["03_2022"]["year"] == "2022"
+    base = output_root / "Porite India Pvt. Ltd"
+    assert (base / "2022" / "20222500111.pdf").exists()
+    assert (base / "2022" / "20222500112.pdf").exists()
+    assert (base / "2023" / "20232500111.pdf").exists()
+    assert not (base / "2027").exists()
+
+
+def test_invalid_invoice_unit_folder_year_review(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    _invoice(
+        input_root / "04-Aug-26" / "Invoice" / "abc" / "bad.pdf",
+        "20262500999",
+        "PORITE INDIA PVT.LTD.",
+    )
+    results = process(input_root, output_root)
+    assert len(results) == 1
+    assert results[0]["status"] == "REVIEW"
+    assert results[0]["reason_code"] == "INVOICE_YEAR_NOT_DETECTED"
+    assert list(output_root.rglob("*.pdf")) == []
 
 
 def test_alias_reuses_existing_customer_folder(tmp_path):
