@@ -8,7 +8,11 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 spec_root = Path(SPECPATH).resolve().parent
 
 datas = [
+    (str(spec_root / "VERSION.txt"), "."),
     (str(spec_root / "customers.txt"), "."),
+    (str(spec_root / "customer_master_alias_mapping.xlsx"), "."),
+    (str(spec_root / "customer_alias_mapping.csv"), "."),
+    (str(spec_root / "customer_alias_mapping_updated.csv"), "."),
     (str(spec_root / "packaging" / "HOW_TO_RUN.txt"), "."),
     (str(spec_root / "packaging" / "Run-InvoiceSorter.bat"), "."),
 ]
@@ -19,6 +23,8 @@ hiddenimports = [
     "core.matching",
     "core.pipeline",
     "core.review_csv",
+    "core.customer_master",
+    "core.version",
     "ui.desktop",
     "fitz",
     "pymupdf",

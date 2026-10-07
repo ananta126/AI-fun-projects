@@ -64,7 +64,7 @@ def render_ui():
     st.title("📁 Invoice Sorter")
     st.write(
         "Read page 1 → identify billed-to customer and GST invoice number → "
-        "copy the complete PDF into Customer / year from the scan folder / source-day."
+        "copy the complete PDF into Customer / year from the scan folder / invoice.pdf."
     )
 
     with st.sidebar:
@@ -76,9 +76,8 @@ def render_ui():
             - Finds nested `DD-MMM-YY` day folders
             - Reads ONLY page 1 of each invoice PDF
             - OCRs only the GST header when page 1 has no usable text
-            - Creates a folder only for an approved customer in customers.txt or an alias
+            - Creates a folder only for a customer in the mapping workbook or an approved alias
             - Year folder comes from the scan-date folder (`01-Sep-26` → 2026)
-            - Keeps the source day folder name as-is under that year
             - Unmatched customers go to the review CSV and are not filed until corrected
             """
         )
@@ -161,11 +160,9 @@ June 26-....zip
             r"""
 Output/
 └── Porite India Pvt. Ltd/
-    └── 2024/
-        ├── 25-Jun-26/
-        │   └── 20242500788.pdf
-        └── 26-Jun-26/
-            └── 20242500686.pdf
+    └── 2026/
+        ├── 20242500788.pdf
+        └── 20242500686.pdf
 """,
             language="text",
         )

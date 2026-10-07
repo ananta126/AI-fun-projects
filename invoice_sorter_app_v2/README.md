@@ -30,20 +30,30 @@ Output:
 Output/
   CUSTOMER NAME/
     YYYY/
-      01-Sep-26/
-        INVOICE_NUMBER.pdf
+      INVOICE_NUMBER.pdf
 
-`YYYY` comes from the **source scan-date folder** (`01-Sep-26` → 2026), not
-from the printed invoice date. The source day folder name is kept as-is.
-If that folder has no parseable year, the file is `REVIEW` and is not copied.
+`YYYY` comes from the invoice subfolder under `Invoice/` (for example,
+`01_2026` → 2026), not the scan-date folder or printed invoice date. If the
+invoice subfolder does not have a parseable year, the file is `REVIEW` and is
+not copied.
 Unknown billed-to names are not given a new folder; correct them in
 `invoice_sorter_review.csv` and use Import corrections (no second OCR).
 A source folder is renamed with `_done` only after every invoice in it copied.
+If a destination already contains another completed invoice for the same
+customer and invoice number, the new PDF is preserved as
+`INVOICE_NUMBER__DUPLICATE_DOCUMENT_ID.pdf`. A collision associated with a
+different customer or an untracked, different file stays in review; existing
+PDFs are never overwritten.
 
 You can point the app at:
 
 - the extracted `June 26` folder, or
 - the zip (`June 26-20260831T053601Z-001.zip`)
+
+If a zip was sorted before and you add folders (for example `1_2024`) to a new
+download, delete the `{zipname}_extracted` folder beside the zip or use an
+updated zip file—the app re-extracts when the archive changes. For daily work,
+point Input at the extracted `DD-MMM-YY` day folder instead of the zip.
 
 Nested date folders are found automatically. PIS folders are left untouched.
 
@@ -102,7 +112,7 @@ The app uses **RapidOCR on page 1 only** (GST header band). Supporting pages are
 
 The printed GST **Invoice No.** (for example `20242500788`) is taken from the page text, not from scanner names like `3345.pdf`.
 
-Folder names come from `customers.txt` (the billed-to list in Summary.xlsx). OCR is matched to that list, so Rapid Machining invoices file as `Rapid Machining Tech.Pvt.Ltd.` rather than OCR spellings.
+Folder names and customer ids come from `customer_master_alias_mapping.xlsx`. Alias Master spellings are filed automatically. Review Required spellings stay in the review CSV. Rapid Machining invoices still file as `Rapid Machining Tech.Pvt.Ltd.`
 
 ## Install and run from source (no exe yet)
 

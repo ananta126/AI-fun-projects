@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
@@ -28,9 +29,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.customer_master import CustomerMasterError, describe_master_files_status  # noqa: E402
 from core.pipeline import import_corrections  # noqa: E402
-from core.review_csv import CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
-from core.sorter import EXCEPTION_REPORT_NAME, process  # noqa: E402
+from core.review_csv import ALIAS_MAPPING_NAME, CUSTOMER_LIST_NAME, REVIEW_CSV_NAME  # noqa: E402
+from core.sorter import EXCEPTION_REPORT_NAME, app_root, process  # noqa: E402
+from core.version import app_version  # noqa: E402
+
+SORT_ERROR_LOG = "invoice_sorter_sort_error.log"
 
 
 class SortWorker(QObject):
@@ -50,21 +55,33 @@ class SortWorker(QObject):
 
             results = process(self.source, self.output, progress=on_progress)
             self.finished.emit(results)
-        except Exception as exc:  # noqa: BLE001 — surface any engine error in the UI
+        except CustomerMasterError as exc:
+            try:
+                (self.output / SORT_ERROR_LOG).write_text(str(exc), encoding="utf-8")
+            except OSError:
+                pass
             self.failed.emit(str(exc))
+        except Exception:  # noqa: BLE001 — surface any engine error in the UI
+            tb = traceback.format_exc()
+            try:
+                (self.output / SORT_ERROR_LOG).write_text(tb, encoding="utf-8")
+            except OSError:
+                pass
+            self.failed.emit(tb)
 
 
 class InvoiceSorterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Invoice Sorter")
+        self.setWindowTitle(f"Invoice Sorter ({app_version()})")
         self.resize(1100, 680)
         self._thread = None
         self._worker = None
 
         intro = QLabel(
             "Desktop app — no browser. Each PDF is one invoice. Page 1 is read; "
-            "the whole file is copied to Customer / year from the scan folder / source day / GST invoice no.pdf. "
+            "the whole file is copied to Official Customer / YYYY / invoice number.pdf. "
+            "YYYY comes from the folder under invoice/ (e.g. 01_2022 → 2022), not the scan-date folder. "
             "Unknown customers stay in the review CSV until you fill Correct Customer ID."
         )
         intro.setWordWrap(True)
@@ -77,6 +94,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._report_path = None
         self._review_path = None
         self._customer_list_path = None
+        self._alias_mapping_path = app_root() / ALIAS_MAPPING_NAME
 
         browse_zip = QPushButton("Choose zip")
         browse_zip.clicked.connect(self._browse_zip)
@@ -111,12 +129,15 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_customers_button = QPushButton("Open customer list")
         self.open_customers_button.setEnabled(False)
         self.open_customers_button.clicked.connect(self._open_customers)
+        self.open_aliases_button = QPushButton("Open alias mapping")
+        self.open_aliases_button.setEnabled(self._alias_mapping_path.is_file())
+        self.open_aliases_button.clicked.connect(self._open_aliases)
         self.import_button = QPushButton("Import corrections")
         self.import_button.clicked.connect(self._import_corrections)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.status = QLabel(
-            "Ready. PIS folders are ignored. Year comes from the scan-date folder (01-Sep-26 → 2026). "
+            "Ready. PIS folders are ignored. Output year comes from invoice/NN_YYYY (e.g. 01_2022 → 2022). "
             "Finished source folders are renamed with _done."
         )
         self.status.setWordWrap(True)
@@ -128,6 +149,7 @@ class InvoiceSorterWindow(QMainWindow):
         actions2 = QHBoxLayout()
         actions2.addWidget(self.open_review_button)
         actions2.addWidget(self.open_customers_button)
+        actions2.addWidget(self.open_aliases_button)
         actions2.addWidget(self.import_button)
 
         self.table = QTableWidget(0, 8)
@@ -148,6 +170,15 @@ class InvoiceSorterWindow(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
+        self._refresh_master_status()
+
+    def _refresh_master_status(self):
+        master_line = describe_master_files_status()
+        self.status.setText(
+            f"Build {app_version()}. {master_line} "
+            "PIS folders are ignored. Output year comes from invoice/NN_YYYY (e.g. 01_2022 → 2022). "
+            "Finished source folders are renamed with _done."
+        )
 
     def _browse_zip(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose invoice zip", "", "Zip (*.zip)")
@@ -181,6 +212,7 @@ class InvoiceSorterWindow(QMainWindow):
         self.open_report_button.setEnabled(False)
         self.open_review_button.setEnabled(False)
         self.open_customers_button.setEnabled(False)
+        self.open_aliases_button.setEnabled(False)
         self.progress.setValue(0)
         self.status.setText("Reading page 1 of each invoice…")
         self.table.setRowCount(0)
@@ -211,6 +243,7 @@ class InvoiceSorterWindow(QMainWindow):
         self._report_path = None
         self._review_path = None
         self._customer_list_path = None
+        self._alias_mapping_path = app_root() / ALIAS_MAPPING_NAME
         if self._output_root is not None:
             report = self._output_root / EXCEPTION_REPORT_NAME
             if report.exists():
@@ -221,9 +254,13 @@ class InvoiceSorterWindow(QMainWindow):
             customers = self._output_root / CUSTOMER_LIST_NAME
             if customers.exists():
                 self._customer_list_path = customers
+            aliases = self._output_root / ALIAS_MAPPING_NAME
+            if aliases.exists():
+                self._alias_mapping_path = aliases
         self.open_report_button.setEnabled(self._report_path is not None)
         self.open_review_button.setEnabled(self._review_path is not None)
         self.open_customers_button.setEnabled(self._customer_list_path is not None)
+        self.open_aliases_button.setEnabled(self._alias_mapping_path.is_file())
         self.progress.setValue(100)
         copied = sum(r.get("status") == "COPIED" for r in results)
         review = sum(r.get("status") == "REVIEW" for r in results)
@@ -254,8 +291,24 @@ class InvoiceSorterWindow(QMainWindow):
 
     def _on_failed(self, message: str):
         self.run_button.setEnabled(True)
-        QMessageBox.critical(self, "Sort failed", message)
-        self.status.setText(message)
+        log_hint = ""
+        if self._output_root is not None:
+            log_path = self._output_root / SORT_ERROR_LOG
+            if log_path.is_file():
+                log_hint = f"\n\nDetails saved to:\n{log_path}"
+        is_master = "Cannot sort:" in message or "Customer master" in message
+        display = message
+        if not is_master and len(display) > 3500:
+            display = display[:3500] + "\n…(truncated)" + log_hint
+        elif log_hint and log_hint not in display:
+            display = display + log_hint
+        title = "Customer master" if is_master else "Sort failed"
+        QMessageBox.critical(self, title, display)
+        if is_master:
+            self._refresh_master_status()
+        else:
+            short = message.splitlines()[-1] if message else "Sort failed"
+            self.status.setText(short[:500])
 
     def _open_output(self):
         if self._output_root is None:
@@ -276,6 +329,11 @@ class InvoiceSorterWindow(QMainWindow):
         if self._customer_list_path is None:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._customer_list_path)))
+
+    def _open_aliases(self):
+        if not self._alias_mapping_path.is_file():
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._alias_mapping_path)))
 
     def _import_corrections(self):
         if self._output_root is None:

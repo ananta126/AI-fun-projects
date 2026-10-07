@@ -113,7 +113,12 @@ def _official_name(customers: list[CustomerRef], customer_id: str) -> str:
     return ""
 
 
-def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[AliasRef]) -> MatchResult:
+def match_customer(
+    raw_text: str,
+    customers: list[CustomerRef],
+    aliases: list[AliasRef],
+    blocked: frozenset[str] | set[str] | None = None,
+) -> MatchResult:
     normalized = normalize_customer(raw_text)
     hay = normalized.split()
     empty = MatchResult(
@@ -121,6 +126,12 @@ def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[Al
     )
     if not hay:
         return empty
+    # Review Required spellings stay unfiled. A shorter approved alias or a
+    # high fuzzy score must not override that sheet.
+    if blocked and normalized in blocked:
+        return MatchResult(
+            False, None, None, "REVIEW_LIST", None, None, None, None, "CUSTOMER_NOT_MATCHED", normalized,
+        )
 
     exact: list[tuple[int, str, str, str]] = []
     for customer in customers:
@@ -142,6 +153,23 @@ def match_customer(raw_text: str, customers: list[CustomerRef], aliases: list[Al
         top = [item for item in exact if item[0] == best_len]
         ids = {item[1] for item in top}
         if len(ids) > 1:
+            # Approved alias beats generic official on another ID at the same phrase length.
+            alias_hits = [item for item in top if item[3] == "EXACT_ALIAS"]
+            alias_ids = {item[1] for item in alias_hits}
+            if len(alias_ids) == 1:
+                _length, customer_id, official_name, method = alias_hits[0]
+                return MatchResult(
+                    True,
+                    customer_id,
+                    official_name,
+                    method,
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    normalized,
+                )
             first, second = top[0], top[1]
             return MatchResult(
                 False,

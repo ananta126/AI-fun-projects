@@ -25,6 +25,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-desktop.txt pyinstaller
+      - name: Stamp build version
+        working-directory: invoice_sorter_app_v2
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          Set-Content -Path VERSION.txt -Value $sha -NoNewline
       - name: Build InvoiceSorter.exe
         working-directory: invoice_sorter_app_v2
         run: python -m PyInstaller --noconfirm packaging/invoice_sorter.spec
@@ -34,6 +40,27 @@ jobs:
         run: |
           Copy-Item packaging/HOW_TO_RUN.txt dist/InvoiceSorter/HOW_TO_RUN.txt
           Copy-Item packaging/Run-InvoiceSorter.bat dist/InvoiceSorter/"Run Invoice Sorter.bat"
+          Copy-Item customers.txt dist/InvoiceSorter/customers.txt
+          Copy-Item customer_alias_mapping.csv dist/InvoiceSorter/customer_alias_mapping.csv
+          Copy-Item customer_alias_mapping_updated.csv dist/InvoiceSorter/customer_alias_mapping_updated.csv
+          Copy-Item customer_master_alias_mapping.xlsx dist/InvoiceSorter/customer_master_alias_mapping.xlsx
+          Copy-Item VERSION.txt dist/InvoiceSorter/VERSION.txt
+      - name: Verify bundle files
+        working-directory: invoice_sorter_app_v2
+        shell: pwsh
+        run: |
+          $root = "dist/InvoiceSorter"
+          $required = @(
+            "InvoiceSorter.exe",
+            "customer_master_alias_mapping.xlsx",
+            "customer_alias_mapping_updated.csv",
+            "VERSION.txt"
+          )
+          foreach ($name in $required) {
+            if (-not (Test-Path (Join-Path $root $name))) {
+              Write-Error "Missing bundle file: $name"
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: InvoiceSorter-windows

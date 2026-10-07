@@ -5,32 +5,47 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from core.customer_master import ensure_customer_master_ready, load_customer_master
 from core.db import Store
 from core.matching import AliasRef, CustomerRef, match_customer
 from core.review_csv import (
+    ALIAS_MAPPING_NAME,
     CUSTOMER_LIST_NAME,
     REVIEW_CSV_NAME,
     read_corrections,
+    write_alias_mapping,
     write_customer_list,
     write_review_csv,
 )
 from core.sorter import (
     billed_to_region,
-    extract_invoice_number,
     find_date_folders,
     invoice_child,
     load_official_customers,
     ocr_first_page,
-    retry_ocr_first_page,
+    resolve_invoice_number,
+    retry_first_page_read,
     safe_name,
     worker_count,
     write_exception_report,
-    year_from_scan_folder,
+    year_from_invoice_unit,
     EXCEPTION_REPORT_NAME,
 )
 
 
-_PAGE1 = "Could not confidently extract invoice number/customer from page 1"
+def _detail_invoice_missing() -> str:
+    return "No GST invoice number on page 1 after regex and spatial OCR"
+
+
+def _detail_customer_missing() -> str:
+    return "No billed-to company name on page 1"
+
+
+def _detail_customer_not_matched(raw: str, match) -> str:
+    if match.method and match.method != "NONE":
+        score = f"{match.score:.2f}" if match.score is not None else ""
+        return f"Billed-to '{raw}' did not match an approved customer (method={match.method}, score={score})"
+    return f"Billed-to '{raw}' is not on the customer or alias list"
 
 
 def _master(store: Store):
@@ -88,9 +103,20 @@ def iter_work_units(date_folder: Path):
     return units
 
 
+def _derived_year(unit: dict, date_folder: Path) -> int | None:
+    """Filing year from the invoice unit folder name only (``NN_YYYY``).
+
+    Scan-date folders and printed dates are never used for output year.
+    Direct PDFs under ``Invoice/`` have no unit folder → None.
+    """
+    if unit["kind"] == "subfolder":
+        return year_from_invoice_unit(unit["invoice_folder"])
+    return None
+
+
 def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     source_path = str(pdf.resolve())
-    year = year_from_scan_folder(date_folder.name)
+    year = _derived_year(unit, date_folder)
     base = {
         "source_path": source_path,
         "source_rel": str(pdf.relative_to(root)) if root in pdf.parents or pdf.parent == root else pdf.name,
@@ -122,15 +148,24 @@ def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     except ValueError:
         base["source_rel"] = pdf.name
     try:
-        text, page_count = ocr_first_page(pdf)
-        invoice_no = extract_invoice_number(text)
-        raw = billed_to_region(text)
+        text, page_count, lines = ocr_first_page(pdf)
+        invoice_no = resolve_invoice_number(text, lines, source="page1", pdf_path=pdf)
+        raw = billed_to_region(text, lines)
         if not invoice_no or not raw:
-            retried = retry_ocr_first_page(pdf, text)
+            retried, retried_lines = retry_first_page_read(pdf, text)
             if retried != text:
                 text = retried
-                invoice_no = extract_invoice_number(text) or invoice_no
-                raw = billed_to_region(text) or raw
+            if retried_lines:
+                lines = retried_lines
+            if not invoice_no:
+                invoice_no = resolve_invoice_number(
+                    text,
+                    lines,
+                    source="retry_first_page",
+                    pdf_path=pdf,
+                )
+            if not raw:
+                raw = billed_to_region(text, lines) or raw
     except Exception as exc:  # noqa: BLE001 — one bad PDF must not stop the batch
         base.update({
             "state": "FAILED",
@@ -146,34 +181,55 @@ def _analyze_pdf(pdf: Path, root: Path, date_folder: Path, unit: dict) -> dict:
     return base
 
 
-def _classify(base: dict, customers, aliases) -> dict:
+def _apply_master(store: Store):
+    master = load_customer_master()
+    if master is None:
+        store.seed(load_official_customers())
+        return frozenset()
+    store.seed_master(master.customers, master.aliases)
+    return master.review_norms
+
+
+def _classify(base: dict, customers, aliases, blocked=None) -> dict:
     if base["state"] == "FAILED":
         return base
     year = base["derived_year"]
     invoice_no = base["invoice_number"]
     raw = base["raw_ocr_customer"]
     if not year:
-        base.update({
-            "state": "REVIEW_REQUIRED",
-            "reason_code": "SOURCE_YEAR_NOT_DETECTED",
-            "reason_detail": "Could not read a year from the source date folder",
-        })
+        folder = base.get("source_invoice_folder") or ""
+        if base.get("unit_kind") == "direct":
+            base.update({
+                "state": "REVIEW_REQUIRED",
+                "reason_code": "INVOICE_YEAR_NOT_DETECTED",
+                "reason_detail": (
+                    "PDF is directly under Invoice/; expected a sequence_YEAR subfolder (e.g. 01_2022)"
+                ),
+            })
+        else:
+            base.update({
+                "state": "REVIEW_REQUIRED",
+                "reason_code": "INVOICE_YEAR_NOT_DETECTED",
+                "reason_detail": (
+                    f"Invoice unit folder '{folder}' does not match sequence_YEAR (e.g. 01_2022)"
+                ),
+            })
         return base
     if not invoice_no:
         base.update({
             "state": "REVIEW_REQUIRED",
             "reason_code": "INVOICE_NUMBER_NOT_DETECTED",
-            "reason_detail": _PAGE1,
+            "reason_detail": _detail_invoice_missing(),
         })
         return base
     if not raw:
         base.update({
             "state": "REVIEW_REQUIRED",
             "reason_code": "CUSTOMER_NOT_DETECTED",
-            "reason_detail": _PAGE1,
+            "reason_detail": _detail_customer_missing(),
         })
         return base
-    match = match_customer(raw, customers, aliases)
+    match = match_customer(raw, customers, aliases, blocked)
     base["normalized_customer"] = match.normalized
     base["match_method"] = match.method
     base["match_score"] = match.score
@@ -193,7 +249,7 @@ def _classify(base: dict, customers, aliases) -> dict:
         "customer_id": match.customer_id or "",
         "official_name": match.official_name or "",
         "reason_code": match.reason_code or "CUSTOMER_NOT_MATCHED",
-        "reason_detail": _PAGE1,
+        "reason_detail": _detail_customer_not_matched(raw, match),
     })
     return base
 
@@ -235,6 +291,41 @@ def result_from_row(row) -> dict:
     }
 
 
+def _skipped_result(
+    root: Path,
+    date_folder: Path,
+    reason: str,
+    pdf: Path | None = None,
+) -> dict:
+    source_file = ""
+    if pdf is not None:
+        try:
+            source_file = str(pdf.relative_to(root))
+        except ValueError:
+            source_file = pdf.name
+    return {
+        "status": "SKIPPED",
+        "source_file": source_file,
+        "date_folder": date_folder.name,
+        "reason": reason,
+        "invoice_number": "",
+        "customer": "",
+        "year": "",
+        "source_pages": "",
+    }
+
+
+def _same_file_contents(left: Path, right: Path) -> bool:
+    with Path(left).open("rb") as left_file, Path(right).open("rb") as right_file:
+        while True:
+            left_chunk = left_file.read(1024 * 1024)
+            right_chunk = right_file.read(1024 * 1024)
+            if left_chunk != right_chunk:
+                return False
+            if not left_chunk:
+                return True
+
+
 def execute_document(store: Store, row, output_root: Path):
     if row["state"] not in {"AUTO_MATCHED", "CORRECTED"}:
         return row
@@ -246,12 +337,11 @@ def execute_document(store: Store, row, output_root: Path):
     official = row["official_name"]
     year = row["derived_year"]
     invoice_no = row["invoice_number"]
-    date_folder = row["date_folder"]
     if not official or not year or not invoice_no:
         return store.update_state(
             row["document_id"], "REVIEW_REQUIRED", "DESTINATION_ERROR", "Missing customer, year, or invoice number",
         )
-    dest_dir = Path(output_root) / safe_name(official) / str(year) / date_folder
+    dest_dir = Path(output_root) / safe_name(official) / str(year)
     dest = dest_dir / f"{safe_name(invoice_no)}.pdf"
     try:
         if dest.exists():
@@ -259,19 +349,57 @@ def execute_document(store: Store, row, output_root: Path):
             same_source = owner and owner["source_path"] == str(source.resolve())
             if same_source:
                 return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
-            if owner or dest.stat().st_size != source.stat().st_size:
+            if owner is None:
+                if dest.stat().st_size == source.stat().st_size and _same_file_contents(dest, source):
+                    return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
                 return store.update_state(
                     row["document_id"],
                     "REVIEW_REQUIRED",
                     "DUPLICATE_DESTINATION",
                     f"Destination already exists: {dest.name}",
                 )
-            return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
+            if owner["customer_id"] != row["customer_id"]:
+                return store.update_state(
+                    row["document_id"],
+                    "REVIEW_REQUIRED",
+                    "DUPLICATE_DESTINATION",
+                    f"Destination already exists for a different customer: {dest.name}",
+                )
+            duplicate_base = dest.with_name(f"{dest.stem}__DUPLICATE_{row['document_id']}{dest.suffix}")
+            duplicate_dest = duplicate_base
+            suffix = 2
+            while duplicate_dest.exists():
+                duplicate_owner = store.completed_at_destination(str(duplicate_dest))
+                if duplicate_dest.stat().st_size == source.stat().st_size and _same_file_contents(duplicate_dest, source):
+                    if duplicate_owner is None or duplicate_owner["source_path"] == str(source.resolve()):
+                        return store.update_state(
+                            row["document_id"], "COMPLETED", "", "", destination=str(duplicate_dest),
+                        )
+                duplicate_dest = duplicate_base.with_name(
+                    f"{duplicate_base.stem}_{suffix}{duplicate_base.suffix}",
+                )
+                suffix += 1
+            shutil.copy2(source, duplicate_dest)
+            if (
+                not duplicate_dest.is_file()
+                or duplicate_dest.stat().st_size != source.stat().st_size
+                or not _same_file_contents(duplicate_dest, source)
+            ):
+                return store.update_state(
+                    row["document_id"], "FAILED", "DESTINATION_ERROR", "Duplicate copy failed integrity check",
+                )
+            return store.update_state(
+                row["document_id"], "COMPLETED", "", "", destination=str(duplicate_dest),
+            )
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
-        if not dest.is_file() or dest.stat().st_size != source.stat().st_size:
+        if (
+            not dest.is_file()
+            or dest.stat().st_size != source.stat().st_size
+            or not _same_file_contents(dest, source)
+        ):
             return store.update_state(
-                row["document_id"], "FAILED", "DESTINATION_ERROR", "Copied file failed size check",
+                row["document_id"], "FAILED", "DESTINATION_ERROR", "Copied file failed integrity check",
             )
         if not source.is_file():
             return store.update_state(
@@ -319,7 +447,7 @@ def finalize_date_folder(store: Store, date_folder: Path):
             try:
                 _rename_done(unit["unit"])
             except OSError:
-                return
+                continue
     if not date_folder.exists():
         return
     invoice_dir = invoice_child(date_folder)
@@ -351,45 +479,49 @@ def _write_reports(store: Store, output_root: Path, extra_results: list[dict]):
     write_exception_report(results, output_root / EXCEPTION_REPORT_NAME)
     write_review_csv(store.review_documents(), output_root / REVIEW_CSV_NAME)
     write_customer_list(store.customers(), output_root / CUSTOMER_LIST_NAME)
+    write_alias_mapping(output_root / ALIAS_MAPPING_NAME)
     return results
 
 
-def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root: Path, progress, execute: bool):
-    from concurrent.futures import ThreadPoolExecutor
+def _persist_payload(store: Store, payload: dict, batch_id: int, output_root: Path, execute: bool) -> dict:
+    payload["batch_id"] = batch_id
+    row = store.upsert_analysis(payload)
+    if execute and row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
+        row = execute_document(store, row, output_root)
+    return result_from_row(row)
+
+
+def _run_jobs(jobs, store: Store, customers, aliases, batch_id: int, output_root: Path, progress, execute: bool, blocked=None):
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     total = len(jobs)
 
     def _payload(job):
         date_folder, unit, pdf, root = job
         analyzed = _analyze_pdf(pdf, root, date_folder, unit)
-        return _classify(analyzed, customers, aliases)
+        return _classify(analyzed, customers, aliases, blocked)
 
-    # jobs are (date_folder, unit, pdf, root)
-    payloads = []
+    produced = []
     workers = 1 if total <= 1 else min(worker_count(), total)
     if workers == 1:
         for index, job in enumerate(jobs, start=1):
             if progress:
                 progress(index - 1, total, job[2].name)
-            payloads.append(_payload(job))
+            produced.append(_persist_payload(store, _payload(job), batch_id, output_root, execute))
             if progress:
                 progress(index, total, job[2].name)
     else:
         if progress:
             progress(0, total, jobs[0][2].name)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for index, payload in enumerate(pool.map(_payload, jobs), start=1):
-                payloads.append(payload)
+            futures = {pool.submit(_payload, job): job for job in jobs}
+            completed = 0
+            for future in as_completed(futures):
+                job = futures[future]
+                produced.append(_persist_payload(store, future.result(), batch_id, output_root, execute))
+                completed += 1
                 if progress:
-                    progress(index, total, "")
-
-    produced = []
-    for payload in payloads:
-        payload["batch_id"] = batch_id
-        row = store.upsert_analysis(payload)
-        if execute and row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
-            row = execute_document(store, row, output_root)
-        produced.append(result_from_row(row))
+                    progress(completed, total, job[2].name)
     return produced
 
 
@@ -399,9 +531,10 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
     root = resolve_input(Path(root))
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
+    ensure_customer_master_ready()
     store = Store(output_root / "invoice_processor.db")
     try:
-        store.seed(load_official_customers())
+        blocked = _apply_master(store)
         customers, aliases = _master(store)
         batch_id = store.start_batch(str(root))
         skipped = []
@@ -410,26 +543,40 @@ def run_batch(root: Path, output_root: Path, progress=None, execute: bool = True
         for date_folder in date_folders:
             units = iter_work_units(date_folder)
             if units is None:
-                skipped.append({
-                    "status": "SKIPPED",
-                    "source_file": "",
-                    "date_folder": date_folder.name,
-                    "reason": "Invoice folder not found",
-                    "invoice_number": "",
-                    "customer": "",
-                    "year": "",
-                    "source_pages": "",
-                })
+                skipped.append(_skipped_result(
+                    root,
+                    date_folder,
+                    "Invoice folder not found (expected lowercase invoice/ under the scan-date folder)",
+                ))
+                continue
+            if not units:
+                skipped.append(_skipped_result(
+                    root,
+                    date_folder,
+                    "No invoice units under invoice/ (folders ending in _done are skipped; rename 01_2022_done back to 01_2022 to re-run)",
+                ))
                 continue
             for unit in units:
                 for pdf in unit["pdfs"]:
                     existing = store.get_by_source(str(pdf.resolve()))
                     if existing and existing["state"] == "COMPLETED":
+                        skipped.append(_skipped_result(
+                            root,
+                            date_folder,
+                            "Already processed in this output folder (delete invoice_processor.db or use a new output folder to re-read)",
+                            pdf=pdf,
+                        ))
                         continue
                     jobs.append((date_folder, unit, pdf, root))
+        if not jobs and date_folders and not skipped:
+            skipped.append(_skipped_result(
+                root,
+                date_folders[0],
+                "No PDFs queued: invoice subfolders may be renamed with _done, or only PIS folders remain",
+            ))
         produced = []
         if jobs:
-            produced = _run_jobs(jobs, store, customers, aliases, batch_id, output_root, progress, execute)
+            produced = _run_jobs(jobs, store, customers, aliases, batch_id, output_root, progress, execute, blocked)
         for date_folder in date_folders:
             finalize_date_folder(store, date_folder)
         _write_reports(store, output_root, skipped)
@@ -455,7 +602,7 @@ def run_one(source_pdf: Path, root: Path, output_root: Path):
     source_pdf = Path(source_pdf)
     store = Store(output_root / "invoice_processor.db")
     try:
-        store.seed(load_official_customers())
+        blocked = _apply_master(store)
         existing = store.get_by_source(str(source_pdf.resolve()))
         if existing and existing["state"] == "COMPLETED":
             return [result_from_row(existing)]
@@ -463,7 +610,7 @@ def run_one(source_pdf: Path, root: Path, output_root: Path):
         unit = _unit_for_pdf(source_pdf, date_folder)
         customers, aliases = _master(store)
         batch_id = store.start_batch(str(root))
-        analyzed = _classify(_analyze_pdf(source_pdf, root, date_folder, unit), customers, aliases)
+        analyzed = _classify(_analyze_pdf(source_pdf, root, date_folder, unit), customers, aliases, blocked)
         analyzed["batch_id"] = batch_id
         row = store.upsert_analysis(analyzed)
         if row["state"] in {"AUTO_MATCHED", "CORRECTED"}:
@@ -520,7 +667,7 @@ def import_corrections(csv_path: Path, output_root: Path):
     store = Store(output_root / "invoice_processor.db")
     results = []
     try:
-        store.seed(load_official_customers())
+        _apply_master(store)
         touched = []
         for incoming in read_corrections(csv_path):
             document_id = (incoming.get("Document ID") or "").strip()
@@ -546,6 +693,7 @@ def import_corrections(csv_path: Path, output_root: Path):
                 )
                 continue
             invoice_no = correct_invoice or row["invoice_number"]
+            # Correct Year in the review CSV overrides derived_year from the invoice unit folder.
             year = correct_year or row["derived_year"]
             if not invoice_no:
                 store.update_state(
