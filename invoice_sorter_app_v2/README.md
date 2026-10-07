@@ -32,12 +32,18 @@ Output/
     YYYY/
       INVOICE_NUMBER.pdf
 
-`YYYY` comes from the **source scan-date folder** (`01-Sep-26` → 2026), not
-from the printed invoice date.
-If that folder has no parseable year, the file is `REVIEW` and is not copied.
+`YYYY` comes from the invoice subfolder under `Invoice/` (for example,
+`01_2026` → 2026), not the scan-date folder or printed invoice date. If the
+invoice subfolder does not have a parseable year, the file is `REVIEW` and is
+not copied.
 Unknown billed-to names are not given a new folder; correct them in
 `invoice_sorter_review.csv` and use Import corrections (no second OCR).
 A source folder is renamed with `_done` only after every invoice in it copied.
+If a destination already contains another completed invoice for the same
+customer and invoice number, the new PDF is preserved as
+`INVOICE_NUMBER__DUPLICATE_DOCUMENT_ID.pdf`. A collision associated with a
+different customer or an untracked, different file stays in review; existing
+PDFs are never overwritten.
 
 You can point the app at:
 

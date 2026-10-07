@@ -315,6 +315,17 @@ def _skipped_result(
     }
 
 
+def _same_file_contents(left: Path, right: Path) -> bool:
+    with Path(left).open("rb") as left_file, Path(right).open("rb") as right_file:
+        while True:
+            left_chunk = left_file.read(1024 * 1024)
+            right_chunk = right_file.read(1024 * 1024)
+            if left_chunk != right_chunk:
+                return False
+            if not left_chunk:
+                return True
+
+
 def execute_document(store: Store, row, output_root: Path):
     if row["state"] not in {"AUTO_MATCHED", "CORRECTED"}:
         return row
@@ -338,19 +349,57 @@ def execute_document(store: Store, row, output_root: Path):
             same_source = owner and owner["source_path"] == str(source.resolve())
             if same_source:
                 return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
-            if owner or dest.stat().st_size != source.stat().st_size:
+            if owner is None:
+                if dest.stat().st_size == source.stat().st_size and _same_file_contents(dest, source):
+                    return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
                 return store.update_state(
                     row["document_id"],
                     "REVIEW_REQUIRED",
                     "DUPLICATE_DESTINATION",
                     f"Destination already exists: {dest.name}",
                 )
-            return store.update_state(row["document_id"], "COMPLETED", "", "", destination=str(dest))
+            if owner["customer_id"] != row["customer_id"]:
+                return store.update_state(
+                    row["document_id"],
+                    "REVIEW_REQUIRED",
+                    "DUPLICATE_DESTINATION",
+                    f"Destination already exists for a different customer: {dest.name}",
+                )
+            duplicate_base = dest.with_name(f"{dest.stem}__DUPLICATE_{row['document_id']}{dest.suffix}")
+            duplicate_dest = duplicate_base
+            suffix = 2
+            while duplicate_dest.exists():
+                duplicate_owner = store.completed_at_destination(str(duplicate_dest))
+                if duplicate_dest.stat().st_size == source.stat().st_size and _same_file_contents(duplicate_dest, source):
+                    if duplicate_owner is None or duplicate_owner["source_path"] == str(source.resolve()):
+                        return store.update_state(
+                            row["document_id"], "COMPLETED", "", "", destination=str(duplicate_dest),
+                        )
+                duplicate_dest = duplicate_base.with_name(
+                    f"{duplicate_base.stem}_{suffix}{duplicate_base.suffix}",
+                )
+                suffix += 1
+            shutil.copy2(source, duplicate_dest)
+            if (
+                not duplicate_dest.is_file()
+                or duplicate_dest.stat().st_size != source.stat().st_size
+                or not _same_file_contents(duplicate_dest, source)
+            ):
+                return store.update_state(
+                    row["document_id"], "FAILED", "DESTINATION_ERROR", "Duplicate copy failed integrity check",
+                )
+            return store.update_state(
+                row["document_id"], "COMPLETED", "", "", destination=str(duplicate_dest),
+            )
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
-        if not dest.is_file() or dest.stat().st_size != source.stat().st_size:
+        if (
+            not dest.is_file()
+            or dest.stat().st_size != source.stat().st_size
+            or not _same_file_contents(dest, source)
+        ):
             return store.update_state(
-                row["document_id"], "FAILED", "DESTINATION_ERROR", "Copied file failed size check",
+                row["document_id"], "FAILED", "DESTINATION_ERROR", "Copied file failed integrity check",
             )
         if not source.is_file():
             return store.update_state(

@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 from core.customer_master import load_customer_master  # noqa: E402
 from core.db import Store  # noqa: E402
 from core.matching import AliasRef, CustomerRef, match_customer, normalize_customer  # noqa: E402
-from core.pipeline import import_corrections  # noqa: E402
+from core.pipeline import execute_document, import_corrections  # noqa: E402
 from core.sorter import (  # noqa: E402
     load_official_customers,
     process,
@@ -358,25 +358,92 @@ def test_gkn_ocr_alias_files_under_official_customer_folder(tmp_path):
     assert not (output_root / "GKN Driveline India Limited").exists()
 
 
-def test_duplicate_destination_is_not_overwritten(tmp_path):
-    """TEST 10: second file with same destination → DUPLICATE_DESTINATION."""
+def test_same_customer_duplicate_destination_uses_unique_suffix(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     folder = input_root / "01-Sep-26" / "Invoice" / "01_2026"
     _invoice(folder / "a.pdf", "20262500111", "PORITE INDIA PVT.LTD.")
+    first_bytes = (folder / "a.pdf").read_bytes()
     _write_page(
         folder / "b.pdf",
         invoice_page_text("20262500111", "01/09/2026", "PORITE INDIA PVT.LTD.") + "\nSecond scan of the same number.\n",
     )
+    second_bytes = (folder / "b.pdf").read_bytes()
     results = process(input_root, output_root)
     by_name = {Path(row["source_file"]).name: row for row in results}
     assert by_name["a.pdf"]["status"] == "COPIED"
-    assert by_name["b.pdf"]["status"] == "REVIEW"
-    assert by_name["b.pdf"]["reason_code"] == "DUPLICATE_DESTINATION"
+    assert by_name["b.pdf"]["status"] == "COPIED"
     dest = output_root / "Porite India Pvt. Ltd" / "2026"
-    assert (dest / "20262500111.pdf").exists()
-    assert not (dest / "20262500111__DUPLICATE.pdf").exists()
-    assert not (input_root / "01-Sep-26_done").exists()
+    original = dest / "20262500111.pdf"
+    duplicate = Path(by_name["b.pdf"]["destination"])
+    assert original.read_bytes() == first_bytes
+    assert duplicate.name.startswith("20262500111__DUPLICATE_DOC-")
+    assert duplicate.read_bytes() == second_bytes
+    assert (input_root / "01-Sep-26_done").exists()
+
+
+def test_untracked_same_size_destination_with_different_contents_stays_in_review(tmp_path):
+    input_root = tmp_path / "Input"
+    output_root = tmp_path / "Output"
+    folder = input_root / "01-Sep-26" / "Invoice" / "01_2026"
+    source = _invoice(folder / "invoice.pdf", "20262500111", "PORITE INDIA PVT.LTD.")
+    dest = output_root / "Porite India Pvt. Ltd" / "2026" / "20262500111.pdf"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"x" * source.stat().st_size)
+
+    results = process(input_root, output_root)
+
+    assert results[0]["status"] == "REVIEW"
+    assert results[0]["reason_code"] == "DUPLICATE_DESTINATION"
+    assert dest.read_bytes() == b"x" * source.stat().st_size
+    assert not list(dest.parent.glob("20262500111__DUPLICATE_*.pdf"))
+
+
+def test_different_customer_destination_collision_stays_in_review(tmp_path):
+    output_root = tmp_path / "Output"
+    store = Store(output_root / "invoice_processor.db")
+    owner_name = "ACME/Industrial Ltd"
+    other_name = "ACME:Industrial Ltd"
+    owner = store.add_customer(owner_name)
+    other = store.add_customer(other_name)
+    assert owner["customer_id"] != other["customer_id"]
+
+    invoice_no = "20262500111"
+    year = "2026"
+    dest = output_root / "ACME_Industrial Ltd" / year / f"{invoice_no}.pdf"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"original invoice")
+    existing_source = tmp_path / "existing.pdf"
+    existing_source.write_bytes(b"original invoice")
+    completed = store.upsert_analysis({
+        "source_path": str(existing_source.resolve()),
+        "source_name": existing_source.name,
+        "customer_id": owner["customer_id"],
+        "official_name": owner_name,
+        "invoice_number": invoice_no,
+        "derived_year": year,
+        "state": "COMPLETED",
+    })
+    store.update_state(completed["document_id"], "COMPLETED", destination=str(dest))
+
+    source = tmp_path / "other.pdf"
+    source.write_bytes(b"different invoice")
+    pending = store.upsert_analysis({
+        "source_path": str(source.resolve()),
+        "source_name": source.name,
+        "customer_id": other["customer_id"],
+        "official_name": other_name,
+        "invoice_number": invoice_no,
+        "derived_year": year,
+        "state": "AUTO_MATCHED",
+    })
+    result = execute_document(store, pending, output_root)
+    store.close()
+
+    assert result["state"] == "REVIEW_REQUIRED"
+    assert result["reason_code"] == "DUPLICATE_DESTINATION"
+    assert dest.read_bytes() == b"original invoice"
+    assert not list(dest.parent.glob(f"{invoice_no}__DUPLICATE_*.pdf"))
 
 
 def test_supporting_pages_stay_in_the_copied_pdf(tmp_path, monkeypatch):

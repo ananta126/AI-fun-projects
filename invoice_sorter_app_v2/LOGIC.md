@@ -16,9 +16,10 @@ UIs only call `process()` / `process_uploaded_zip()`; they do not re-implement e
 | Nested input `DD-MMM-YY/Invoice/` | `find_date_folders` + `invoice_pdfs_in` |
 | Ignore PIS | A day folder without a child named `Invoice` (any case) is `SKIPPED`. PIS PDFs are never listed as jobs. |
 | Output `Customer / YYYY / invoice.pdf` | `execute_document` in `core/pipeline.py` |
-| Year = source scan folder | `year_from_scan_folder` (`01-Sep-26` → 2026). Printed date is not the folder year |
-| Unparseable scan folder → REVIEW | Reason `SOURCE_YEAR_NOT_DETECTED`. No guessed year |
-| Duplicate dest → REVIEW | Existing `{invoice}.pdf` is not overwritten and `__DUPLICATE.pdf` is not written |
+| Year = invoice unit folder | `sequence_YEAR` under `Invoice/` (`01_2026` → 2026). Scan and printed dates are not used |
+| Unparseable invoice unit year → REVIEW | Reason `INVOICE_YEAR_NOT_DETECTED`. No guessed year |
+| Same-customer duplicate dest | Existing `{invoice}.pdf` is preserved; the new copy gets `__DUPLICATE_{document_id}` |
+| Other destination collision → REVIEW | Different-customer or untracked, different-content destinations are never overwritten |
 | Uncertain → REVIEW | No copy. Excel `Could_not_read` and `invoice_sorter_review.csv` |
 | Customer = billed-to customer id | `customer_master_alias_mapping.xlsx` seeds ids, official names, and Alias Master. Review Required spellings are not filed. Then strict fuzzy |
 | Unknown customer | No folder. `CUSTOMER_NOT_MATCHED` until the review CSV supplies Correct Customer ID |
@@ -262,9 +263,19 @@ Lock `_OUTPUT_LOCK` around mkdir + exists + copy (thread-safe).
 
 ### DUPLICATE
 
-Only if the exact dest file already exists. Second copy: `__DUPLICATE.pdf`. A **third** run of the same pair still targets `__DUPLICATE.pdf` and **overwrites** that duplicate file. There is no `__DUPLICATE2`.
+If the exact destination already belongs to a completed document for the same
+customer, preserve the new PDF at
+`{invoice_no}__DUPLICATE_{document_id}.pdf`. If that name is already occupied
+by a different file, append `_2`, `_3`, and so on; a retry that finds the same
+source bytes at the planned duplicate path is idempotent.
 
-Duplicates are still status `COPIED`, not REVIEW. They do **not** appear on the Excel exception sheets.
+The existing destination is never overwritten. A collision for a different
+customer, or an untracked destination with different contents, stays
+`REVIEW_REQUIRED` as `DUPLICATE_DESTINATION`. An untracked destination whose
+contents exactly match the source is treated as an already completed copy.
+
+Same-customer duplicates are status `COPIED`, not REVIEW. They do **not** appear
+on the Excel exception sheets.
 
 ### REVIEW (not copied)
 
@@ -343,7 +354,7 @@ Re-exports engine functions for older tests. Does not change extractors.
 | Page 1 only | `test_ocr_pdf_reads_only_first_page`, `test_process_does_not_scan_supporting_pages` |
 | PIS skip | `test_missing_invoice_folder_is_skipped` |
 | Excel unread + skip | `test_exception_excel_lists_unreadable_and_skipped` |
-| Duplicate file | `test_duplicate_destination_is_not_overwritten` |
+| Same-customer duplicate file | `test_same_customer_duplicate_destination_uses_unique_suffix` |
 
 Fixtures in `tests/pdf_fixtures.py` are **text** or rendered **images** of a fake GST header; they are not the client’s real `3344.pdf`.
 
@@ -360,9 +371,9 @@ Fixtures in `tests/pdf_fixtures.py` are **text** or rendered **images** of a fak
 | Folder is OCR garbage not customers.txt | `match_official_customer` failed; `customers.txt` missing next to exe (`app_root`) |
 | Invoice file named AAACH1727L | `_plausible` / `20xxxxxxxxx` search failed |
 | Year 2020 from date 2024 | Old regex `\d{2}` before `\d{4}` — must stay `\d{4}\|\d{2}` |
-| Year 2026 from `01-Sep-26` | Year taken from folder by mistake — should only be `extract_invoice_date` |
+| Wrong output year | `year_from_invoice_unit` reads `sequence_YEAR` under `Invoice/`; scan/printed dates must not determine it |
 | Supporting pages became their own invoices | `ocr_first_page` / `invoice_pdfs_in` must not walk non-Invoice dirs; splitting was removed |
-| Same invoice overwritten | Third copy overwrites `__DUPLICATE.pdf` |
+| Same invoice overwritten | `execute_document` must preserve the original and generate a unique duplicate suffix |
 | Zip change ignored | Stale `{zipstem}_extracted` still has date folders |
 | EXE asks for Python | User ran source `run.bat` / `.py`, not `InvoiceSorter.exe` |
 | EXE silent crash | `invoice_sorter.log`; missing `customers.txt` or ONNX next to exe |

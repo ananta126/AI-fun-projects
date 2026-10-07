@@ -249,7 +249,7 @@ def test_retry_wrapper_returns_only_first_page(tmp_path, monkeypatch):
     assert updated == [(0, "old retry")]
 
 
-def test_duplicate_destination_is_not_overwritten(tmp_path):
+def test_same_customer_duplicate_destination_gets_a_unique_suffix(tmp_path):
     input_root = tmp_path / "Input"
     output_root = tmp_path / "Output"
     invoice_dir = input_root / "25-Jun-26" / "Invoice" / "01_2026"
@@ -262,22 +262,25 @@ def test_duplicate_destination_is_not_overwritten(tmp_path):
     page.insert_text((72, 72), SAMPLE_PAGE + "GSTIN : 27AABCP1234A1Z5\nExtra line so this file is not the same bytes.\n")
     doc.save(other)
     doc.close()
+    original_bytes = (invoice_dir / "3344.pdf").read_bytes()
+    duplicate_bytes = other.read_bytes()
 
     first = process(input_root, output_root)
-    # Run again only if the day was not marked _done. Two files share one invoice number,
-    # so the day stays open and the second file must not overwrite the first.
+    # Two files share one invoice number; keep both copies without overwriting.
     second_file_results = [row for row in first if row["source_file"].endswith("3345.pdf")]
     first_file_results = [row for row in first if row["source_file"].endswith("3344.pdf")]
     first = first_file_results
     second = second_file_results
 
     assert first[0]["status"] == "COPIED"
-    assert second[0]["status"] == "REVIEW"
-    assert second[0]["reason_code"] == "DUPLICATE_DESTINATION"
+    assert second[0]["status"] == "COPIED"
     dest_dir = output_root / "Porite India Pvt. Ltd" / "2026"
-    assert (dest_dir / "20242500788.pdf").exists()
-    assert not (dest_dir / "20242500788__DUPLICATE.pdf").exists()
-    assert not (input_root / "25-Jun-26_done").exists()
+    original = dest_dir / "20242500788.pdf"
+    duplicate = Path(second[0]["destination"])
+    assert original.read_bytes() == original_bytes
+    assert duplicate.name.startswith("20242500788__DUPLICATE_DOC-")
+    assert duplicate.read_bytes() == duplicate_bytes
+    assert (input_root / "25-Jun-26_done").exists()
 
 
 def test_nested_june_folder_creates_customer_then_day(tmp_path):
