@@ -1,0 +1,8 @@
+{
+  "app_name": "Clickless",
+  "log_level": "INFO",
+  "database_path": "data/clickless.db",
+  "log_file_path": "logs/clickless.log",
+  "dry_run_default": false,
+  "theme": "dark"
+}
