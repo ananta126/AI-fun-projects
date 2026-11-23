@@ -1,0 +1,37 @@
+{
+  "workflow_id": "hello_clickless_v1",
+  "name": "Hello Clickless",
+  "version": "1.0",
+  "description": "Demonstrates logging, context variables, and optional dry-run execution.",
+  "steps": [
+    {
+      "id": "step_1",
+      "action": "log_message",
+      "parameters": {
+        "message": "Hello from Clickless — workflow started"
+      }
+    },
+    {
+      "id": "step_2",
+      "action": "set_context",
+      "parameters": {
+        "key": "greeting",
+        "value": "Hello, Clickless!"
+      }
+    },
+    {
+      "id": "step_3",
+      "action": "log_message",
+      "parameters": {
+        "message": "Context greeting stored (see run snapshot)"
+      }
+    },
+    {
+      "id": "step_4",
+      "action": "delay",
+      "parameters": {
+        "milliseconds": 100
+      }
+    }
+  ]
+}
